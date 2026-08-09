@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(uv run pytest:*)",
+      "Bash(uv run python scripts/:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Read(./**)"
+    ],
+    "deny": [
+      "Bash(curl:*)",
+      "Bash(wget:*)",
+      "Bash(git push:*)",
+      "Bash(rm:*)",
+      "WebFetch",
+      "WebSearch",
+      "Edit(./TAXONOMY.md)",
+      "Edit(./PREDICTION.md)",
+      "Write(./TAXONOMY.md)",
+      "Write(./PREDICTION.md)"
+    ]
+  }
+}

@@ -13,7 +13,6 @@
     "deny": [
       "Bash(curl:*)",
       "Bash(wget:*)",
-      "Bash(git push:*)",
       "Bash(rm:*)",
       "WebFetch",
       "WebSearch",

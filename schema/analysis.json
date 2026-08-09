@@ -1,0 +1,108 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://picstory/schema/analysis.json",
+  "title": "AnalysisOutput",
+  "description": "Machine-checkable mirror of src/picstory/schema.py. IDs enumerated below are the closed set frozen in TAXONOMY.md v1.1 (9 Aug 2026) plus 'unclassified' (section U). Kept in sync with TAXONOMY.md by tests/test_schema.py - do not hand-edit the ID list without a corresponding TAXONOMY.md changelog entry.",
+  "type": "object",
+  "required": ["schema_version", "frames"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "frames": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/frameAnalysis" }
+    },
+    "pick": {
+      "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/pick" }]
+    },
+    "habit": {
+      "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/habit" }]
+    }
+  },
+  "$defs": {
+    "fFailureId": {
+      "enum": [
+        "F01", "F02", "F03", "F04", "F05", "F06", "F07", "F08", "F09", "F10",
+        "F11", "F12", "F13", "F14", "F15"
+      ]
+    },
+    "sStrengthId": {
+      "enum": ["S01", "S02", "S03", "S04"]
+    },
+    "rRuleId": {
+      "enum": ["R01"]
+    },
+    "taxonomyOrUnclassifiedId": {
+      "enum": [
+        "F01", "F02", "F03", "F04", "F05", "F06", "F07", "F08", "F09", "F10",
+        "F11", "F12", "F13", "F14", "F15",
+        "S01", "S02", "S03", "S04",
+        "R01",
+        "unclassified"
+      ]
+    },
+    "finding": {
+      "type": "object",
+      "required": ["taxonomy_id"],
+      "additionalProperties": false,
+      "properties": {
+        "taxonomy_id": { "$ref": "#/$defs/taxonomyOrUnclassifiedId" },
+        "description": {
+          "type": ["string", "null"],
+          "description": "Required (non-empty) when taxonomy_id is 'unclassified'; optional evidence/context otherwise."
+        }
+      }
+    },
+    "frameAnalysis": {
+      "type": "object",
+      "required": ["frame_id", "findings"],
+      "additionalProperties": false,
+      "properties": {
+        "frame_id": { "type": "string" },
+        "findings": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/finding" }
+        }
+      }
+    },
+    "pick": {
+      "type": "object",
+      "required": ["frame_id"],
+      "additionalProperties": false,
+      "properties": {
+        "frame_id": {
+          "type": "string",
+          "description": "Must match a frame_id present in the same output's frames[]."
+        },
+        "reasons": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/sStrengthId" },
+          "default": []
+        },
+        "disqualifiers": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/fFailureId" },
+          "default": []
+        }
+      }
+    },
+    "habit": {
+      "type": "object",
+      "required": ["taxonomy_id", "description"],
+      "additionalProperties": false,
+      "properties": {
+        "taxonomy_id": {
+          "description": "F- or S-item only; R01 is a conditional rule, not a recurring habit.",
+          "oneOf": [
+            { "$ref": "#/$defs/fFailureId" },
+            { "$ref": "#/$defs/sStrengthId" }
+          ]
+        },
+        "description": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

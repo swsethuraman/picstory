@@ -2,7 +2,7 @@
 
 D-nnn format, stable IDs. BUILDER writes here when blocked (question, options, recommendation, reasoning) and moves on. CRITIC may add entries and may not close them. Only the human writes rulings; rulings are appended, never rewritten. **At five open decisions, both routines halt and write HALT.md.**
 
-Open count: 4
+Open count: 0
 
 ---
 
@@ -17,19 +17,19 @@ Open count: 4
 - **Options:** (a) Web. (b) iOS native.
 - **Ruling (9 Aug 2026):** Neither, for the experiment. The deliverable is a local CLI/pipeline (batch in, analysis out). Packaging as web or native is a post-experiment product decision and out of scope for the autonomous phase. Re-open after scoring.
 
-## D-003 · Does the taxonomy get shown to users? — **OPEN**
+## D-003 · Does the taxonomy get shown to users? — **RULED**
 - **Question:** Is the closed list a visible teaching asset or hidden machinery?
 - **Options:** (a) Fully public. (b) Fully hidden. (c) Item names surface in findings ("Edge intrusion — F06"); the full list stays unpublished.
 - **Recommendation:** (c). Named findings make the coaching feel diagnostic; recurring names make the profile legible. Not blocking for the experiment (output is for the owner), so left open without cost.
-- **Ruling:** —
+- **Ruling (10 Aug 2026, owner):** (c). Item names surface in findings ("Edge intrusion — F06"); the full list stays unpublished.
 
-## D-004 · Free, subscription, or one-off? — **OPEN**
+## D-004 · Free, subscription, or one-off? — **RULED**
 - **Question:** Pricing model.
 - **Options:** (a) Free. (b) Subscription. (c) One-off.
 - **Recommendation:** Defer; free for the ten-person test. Gates only the profile (Stage 4, queue item 12), which is `[blocked: D-004]` accordingly.
-- **Ruling:** —
+- **Ruling (10 Aug 2026, owner):** Free for the ten-person test; revisit before any wider release. If Stage 4 (queue item 12) arrives during the experiment, its `[blocked: D-004]` tag is lifted — profile work may proceed on the free assumption.
 
-## D-005 · F14 and S03: their Detection text isn't a single-frame property — **OPEN**
+## D-005 · F14 and S03: their Detection text isn't a single-frame property — **RULED**
 - **Question:** QUEUE.md item 4 (builder-004 session) groups F14 (Wide-shot
   monoculture) and S03 (Tight framing) with the other single-frame
   Anthropic-API-vision detectors. Both items' Detection text in TAXONOMY.md
@@ -64,9 +64,12 @@ Open count: 4
   QUEUE-item-2 registration) until Stage 2 lands; this is a sequencing gap
   in QUEUE.md's staging, not a taxonomy defect, so no TAXONOMY.md edit is
   implied either way.
-- **Ruling:** —
+- **Ruling (10 Aug 2026, owner):** (a). Deferral approved — F14 and S03 are
+  batch-relative by their Detection text and get implemented in Stage 2
+  (items 7–9) when batch context exists. Single-frame proxies under their
+  real IDs are rejected, per the reasoning above.
 
-## D-006 · No ANTHROPIC_API_KEY in BUILDER sessions — how do item 4's detectors get genuine recorded test fixtures? — **OPEN**
+## D-006 · No ANTHROPIC_API_KEY in BUILDER sessions — how do item 4's detectors get genuine recorded test fixtures? — **RULED**
 - **Question:** CLAUDE.md's API-discipline rule requires the test suite to
   run offline against "recorded" Anthropic API responses. This session's
   sandboxed BUILDER environment has no `ANTHROPIC_API_KEY` (checked `env`
@@ -100,4 +103,16 @@ Open count: 4
   sessions specifically. (c) is the fallback if neither is worth the
   owner's time before the hard stop - not a taxonomy/implementation defect,
   just leaves this gap open.
-- **Ruling:** —
+- **Ruling (10 Aug 2026, owner):** Modified (a). Root cause of the missing
+  key is suspected to be the platform filtering the reserved name
+  `ANTHROPIC_API_KEY` from cloud sessions; the same key is now also
+  provided in the session environment as `PICSTORY_VISION_KEY` (spend cap
+  unchanged, set in the owner's console). Next BUILDER session: update
+  `_vision.default_caller()` to read `PICSTORY_VISION_KEY` first, falling
+  back to `ANTHROPIC_API_KEY`; then make a small number of live calls,
+  save the raw responses under `tests/fixtures/vision/`, and replace the
+  hand-authored fixture shapes with the recordings. The worklog should
+  state which of the two variable names was actually visible in `env`
+  (this settles the filtering question). Hand-authored shapes remain
+  acceptable until a live call succeeds. If neither variable is visible in
+  the session, fall back to option (b): the owner records fixtures locally.

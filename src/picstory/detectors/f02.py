@@ -31,13 +31,25 @@ BLOCK = 8  # local-variance window, in downsampled pixels
 
 
 def _local_variance(luminance: np.ndarray) -> np.ndarray:
-    """Variance within BLOCK x BLOCK tiles, broadcast back to pixel shape."""
+    """Variance within BLOCK x BLOCK tiles, broadcast back to pixel shape.
+
+    `luminance`'s dimensions are real-photo dimensions, not guaranteed
+    multiples of BLOCK. The leftover <BLOCK-pixel strip at the bottom/right
+    (if any) is edge-padded from the nearest full tile's variance, so the
+    output always matches `luminance`'s own shape - callers combine this
+    with other full-shape arrays (e.g. `dark`) and a shape mismatch there
+    would broadcast-error rather than misdetect.
+    """
     h, w = luminance.shape
     h_trim, w_trim = h - (h % BLOCK), w - (w % BLOCK)
     trimmed = luminance[:h_trim, :w_trim]
     tiles = trimmed.reshape(h_trim // BLOCK, BLOCK, w_trim // BLOCK, BLOCK)
     tile_var = tiles.var(axis=(1, 3))
-    return np.repeat(np.repeat(tile_var, BLOCK, axis=0), BLOCK, axis=1)
+    variance = np.repeat(np.repeat(tile_var, BLOCK, axis=0), BLOCK, axis=1)
+    pad_h, pad_w = h - h_trim, w - w_trim
+    if pad_h or pad_w:
+        variance = np.pad(variance, ((0, pad_h), (0, pad_w)), mode="edge")
+    return variance
 
 
 def _edge_obstruction_run(dark_and_flat: np.ndarray, edge: str) -> float:

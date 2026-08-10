@@ -8,21 +8,27 @@ implemented at this single-photo stage and remain
 `DetectorNotImplemented` stubs (already covered by
 `tests/test_detector_registry.py::test_unimplemented_stub_raises_not_implemented`).
 
-Fixture note (read before assuming these are "recorded API responses" per
-CLAUDE.md's API-discipline rule): this session's sandboxed environment has no
-ANTHROPIC_API_KEY, so no live call to api.anthropic.com was possible to
-record genuine fixtures from. The response shapes below
-(`_FakeToolUseBlock`/`_FakeResponse`) are hand-authored to match the
-documented Anthropic Messages API tool_use structure so that
-`_vision.parse_tool_use_response` - the real parsing code, not a bypass of it
-- is genuinely exercised. This is a gap, not a substitute: flagged in
-DECISIONS.md D-005 for the owner, since fixing it needs either API access in
-agent sessions or an owner-recorded round of real fixtures to replace these.
-No test here claims to be a live-call recording.
+Fixture note (DECISIONS.md D-006): earlier sessions had no working API key,
+so every response shape here was hand-authored to match the documented
+Anthropic Messages API tool_use structure - a gap D-006 tracked, not a
+substitute (`_vision.parse_tool_use_response`, the real parsing code, was
+still genuinely exercised; what was missing was evidence a live call
+actually comes back in the shape the code expects). D-006's ruling
+provisioned `PICSTORY_VISION_KEY` for agent sessions; this session used it
+to make 4 live calls (`scripts/record_vision_fixtures.py`) and recorded the
+raw responses under `tests/fixtures/vision/`. The
+"...replays_genuine_recorded_api_call" tests below replay those recordings
+through `parse_tool_use_response` - genuine live-call evidence, not a
+fixture. `_FakeToolUseBlock`/`_FakeResponse` remain for the malformed-shape
+tests only (missing tool_use block, wrong ID, missing field, empty
+rationale): a real call under this module's schema-enforced `tool_choice`
+cannot produce a malformed response, so those specific cases have no live
+equivalent to record and stay intentionally hand-authored.
 """
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import numpy as np
@@ -198,6 +204,45 @@ def test_judge_rejects_caller_returning_mismatched_taxonomy_id() -> None:
         judge(_frame(), "F04", "some detection text", caller=wrong_id_caller)
 
 
+# --- default_caller() key resolution (DECISIONS.md D-006) ---------------
+# Patches anthropic.Anthropic itself so default_caller()'s real code runs
+# end-to-end (no live call - the fake client's constructor just records the
+# api_key it was given).
+
+
+class _FakeAnthropicClient:
+    last_api_key: str | None = None
+
+    def __init__(self, *, api_key: str | None = None) -> None:
+        _FakeAnthropicClient.last_api_key = api_key
+
+
+def test_default_caller_prefers_picstory_vision_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    import anthropic
+
+    from picstory.detectors import _vision
+
+    monkeypatch.setenv("PICSTORY_VISION_KEY", "vision-key")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "anthropic-key")
+    monkeypatch.setattr(anthropic, "Anthropic", _FakeAnthropicClient)
+
+    _vision.default_caller()
+    assert _FakeAnthropicClient.last_api_key == "vision-key"
+
+
+def test_default_caller_falls_back_to_anthropic_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    import anthropic
+
+    from picstory.detectors import _vision
+
+    monkeypatch.delenv("PICSTORY_VISION_KEY", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "anthropic-key")
+    monkeypatch.setattr(anthropic, "Anthropic", _FakeAnthropicClient)
+
+    _vision.default_caller()
+    assert _FakeAnthropicClient.last_api_key == "anthropic-key"
+
+
 # --- parse_tool_use_response: exercised against hand-built SDK-shaped ----
 # --- response objects (see module docstring for why these are synthetic) -
 
@@ -220,12 +265,37 @@ class _FakeResponse:
         self.content = content
 
 
-def test_parse_tool_use_response_extracts_valid_verdict() -> None:
-    response = _FakeResponse(
-        [_FakeToolUseBlock(TOOL_NAME, {"taxonomy_id": "F06", "detected": True, "rationale": "shoulder at right edge"})]
-    )
-    verdict = parse_tool_use_response(response, "F06")
-    assert verdict == VisionVerdict(taxonomy_id="F06", detected=True, rationale="shoulder at right edge")
+# --- parse_tool_use_response replayed against genuine recorded live calls --
+# --- (DECISIONS.md D-006): 4 calls, F13 and S01 against two drawn scenes, --
+# --- recorded by scripts/record_vision_fixtures.py. Replaying a saved     --
+# --- response is offline (no network here) - see module docstring.       --
+
+_FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures" / "vision"
+
+# fixture filename -> (taxonomy_id, verdict actually returned by the live call)
+_RECORDED_CALLS = {
+    "f13_landmark_alone.json": ("F13", True),
+    "f13_landmark_with_figure.json": ("F13", True),
+    "s01_landmark_alone.json": ("S01", False),
+    "s01_landmark_with_figure.json": ("S01", False),
+}
+
+
+def _load_recorded_response(fixture_name: str):
+    from anthropic.types import Message
+
+    data = json.loads((_FIXTURES_DIR / fixture_name).read_text(encoding="utf-8"))
+    return Message.model_validate(data)
+
+
+@pytest.mark.parametrize("fixture_name", sorted(_RECORDED_CALLS))
+def test_parse_tool_use_response_replays_genuine_recorded_api_call(fixture_name: str) -> None:
+    taxonomy_id, expected_detected = _RECORDED_CALLS[fixture_name]
+    response = _load_recorded_response(fixture_name)
+    verdict = parse_tool_use_response(response, taxonomy_id)
+    assert verdict.taxonomy_id == taxonomy_id
+    assert verdict.detected is expected_detected
+    assert verdict.rationale  # the live model always filled this in
 
 
 def test_parse_tool_use_response_ignores_leading_text_block() -> None:

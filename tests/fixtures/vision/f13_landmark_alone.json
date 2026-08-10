@@ -1,0 +1,41 @@
+{
+  "container": null,
+  "content": [
+    {
+      "caller": {
+        "type": "direct"
+      },
+      "id": "toolu_013duFaS6F5rZk9MNXxsLnPi",
+      "input": {
+        "detected": true,
+        "rationale": "The image shows a single tall monument-like structure with no people, vehicles, or other reference objects to indicate its actual scale, and no surrounding context or varied vantage point\u2014just a flat, single depiction that reads as a plain record rather than a full experience.",
+        "taxonomy_id": "F13"
+      },
+      "name": "report_taxonomy_finding",
+      "type": "tool_use"
+    }
+  ],
+  "id": "msg_011CduktirjKPWTFwrDgvt5F",
+  "model": "claude-sonnet-5",
+  "role": "assistant",
+  "stop_details": null,
+  "stop_reason": "tool_use",
+  "stop_sequence": null,
+  "type": "message",
+  "usage": {
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 0,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": "global",
+    "input_tokens": 1234,
+    "output_tokens": 162,
+    "output_tokens_details": {
+      "thinking_tokens": 0
+    },
+    "server_tool_use": null,
+    "service_tier": "standard"
+  }
+}

@@ -133,10 +133,19 @@ def parse_tool_use_response(response, taxonomy_id: str) -> VisionVerdict:
 
 
 def default_caller() -> VisionCaller:
-    """Production caller: the real Anthropic API (D-001's amendment)."""
+    """Production caller: the real Anthropic API (D-001's amendment).
+
+    Reads PICSTORY_VISION_KEY first, falling back to ANTHROPIC_API_KEY. Per
+    D-006: this platform's cloud sessions filter the reserved
+    ANTHROPIC_API_KEY name out of the environment, so the owner provisions
+    the same key under PICSTORY_VISION_KEY as well.
+    """
+    import os
+
     import anthropic
 
-    client = anthropic.Anthropic()
+    api_key = os.environ.get("PICSTORY_VISION_KEY") or os.environ.get("ANTHROPIC_API_KEY")
+    client = anthropic.Anthropic(api_key=api_key)
 
     def call(request: VisionRequest) -> VisionVerdict:
         image_b64 = base64.standard_b64encode(request.image_bytes).decode("ascii")

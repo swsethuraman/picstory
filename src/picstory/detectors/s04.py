@@ -1,18 +1,21 @@
-"""S04 · Restraint composition — registry stub.
+"""S04 · Restraint composition — Anthropic API vision-call detector.
 
-Claims the S04 registry slot (QUEUE.md item 2). Real detection logic
-(vision model call per API-discipline rule) lands in QUEUE.md item 4; until then this stub raises
-DetectorNotImplemented rather than returning a silent negative - a stub
-returning nothing is not an implementation (CLAUDE.md).
+Judgment-dependent per QUEUE.md item 4 and CLAUDE.md's API-discipline rule:
+the call embeds S04's Detection text verbatim (via
+`schema.taxonomy_detection_text`, not a local copy) and returns structured
+output naming S04. See `_vision.py` for the shared call/parse plumbing.
 """
 
 from __future__ import annotations
 
-from picstory.detectors.base import DetectorNotImplemented, register
+from picstory.detectors._vision import VisionCaller, judge
+from picstory.detectors.base import register
+from picstory.frame import Frame
+from picstory.schema import Finding, taxonomy_detection_text
+
+TAXONOMY_ID = "S04"
 
 
-@register("S04")
-def detect(*_args, **_kwargs):
-    raise DetectorNotImplemented(
-        "S04: Restraint composition detector not yet implemented (QUEUE.md item 4)"
-    )
+@register(TAXONOMY_ID)
+def detect(frame: Frame, *, caller: VisionCaller | None = None) -> Finding | None:
+    return judge(frame, TAXONOMY_ID, taxonomy_detection_text(TAXONOMY_ID), caller=caller)

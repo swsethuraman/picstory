@@ -1,18 +1,21 @@
-"""F05 · Ultrawide geometric distortion — registry stub.
+"""F05 · Ultrawide geometric distortion — Anthropic API vision-call detector.
 
-Claims the F05 registry slot (QUEUE.md item 2). Real detection logic
-(vision model call per API-discipline rule) lands in QUEUE.md item 4; until then this stub raises
-DetectorNotImplemented rather than returning a silent negative - a stub
-returning nothing is not an implementation (CLAUDE.md).
+Judgment-dependent per QUEUE.md item 4 and CLAUDE.md's API-discipline rule:
+the call embeds F05's Detection text verbatim (via
+`schema.taxonomy_detection_text`, not a local copy) and returns structured
+output naming F05. See `_vision.py` for the shared call/parse plumbing.
 """
 
 from __future__ import annotations
 
-from picstory.detectors.base import DetectorNotImplemented, register
+from picstory.detectors._vision import VisionCaller, judge
+from picstory.detectors.base import register
+from picstory.frame import Frame
+from picstory.schema import Finding, taxonomy_detection_text
+
+TAXONOMY_ID = "F05"
 
 
-@register("F05")
-def detect(*_args, **_kwargs):
-    raise DetectorNotImplemented(
-        "F05: Ultrawide geometric distortion detector not yet implemented (QUEUE.md item 4)"
-    )
+@register(TAXONOMY_ID)
+def detect(frame: Frame, *, caller: VisionCaller | None = None) -> Finding | None:
+    return judge(frame, TAXONOMY_ID, taxonomy_detection_text(TAXONOMY_ID), caller=caller)

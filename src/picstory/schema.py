@@ -25,6 +25,10 @@ UNCLASSIFIED = "unclassified"
 _ROOT = Path(__file__).resolve().parents[2]
 _TAXONOMY_MD = _ROOT / "TAXONOMY.md"
 _ID_HEADING = re.compile(r"^### ([FSR]\d{2})\b", re.MULTILINE)
+_DETECTION_LINE = re.compile(
+    r"^### (?P<id>[FSR]\d{2}) ·.*\n(?:^-.*\n)*?^- \*\*Detection:\*\* (?P<text>.+)$",
+    re.MULTILINE,
+)
 
 
 class SchemaError(ValueError):
@@ -40,6 +44,28 @@ def taxonomy_ids() -> frozenset[str]:
     """
     text = _TAXONOMY_MD.read_text(encoding="utf-8")
     return frozenset(_ID_HEADING.findall(text))
+
+
+@lru_cache(maxsize=1)
+def _detection_texts() -> dict[str, str]:
+    text = _TAXONOMY_MD.read_text(encoding="utf-8")
+    return {m.group("id"): m.group("text").strip() for m in _DETECTION_LINE.finditer(text)}
+
+
+def taxonomy_detection_text(taxonomy_id: str) -> str:
+    """The exact Detection text for one taxonomy ID, parsed verbatim from TAXONOMY.md.
+
+    Single source of truth (same reasoning as `taxonomy_ids()`): a
+    judgment-dependent detector's prompt must embed the item's Detection text
+    verbatim (CLAUDE.md's API-discipline rule). Reading it here rather than
+    copy-pasting it into each detector module makes verbatim drift structurally
+    impossible rather than merely tested for. R01 and CMP have no Detection
+    bullet and are not valid inputs.
+    """
+    try:
+        return _detection_texts()[taxonomy_id]
+    except KeyError:
+        raise SchemaError(f"no Detection text found for taxonomy_id {taxonomy_id!r}") from None
 
 
 @dataclass

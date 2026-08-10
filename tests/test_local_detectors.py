@@ -109,6 +109,21 @@ def test_f02_lens_grip_obstruction_clean_on_uniformly_detailed_frame() -> None:
     assert detectors.get("F02")(_frame(_rgb3(gray))) is None
 
 
+def test_f02_lens_grip_obstruction_handles_dimensions_not_divisible_by_block() -> None:
+    # Regression: real photo dimensions are rarely exact multiples of the
+    # local-variance BLOCK size (8). _local_variance used to return an
+    # array trimmed to the nearest multiple, which broadcast-errored
+    # against the untrimmed `dark` mask for any such size - e.g. 300x300
+    # (300 % 8 == 4). Every prior test used 200x200 (200 % 8 == 0), which
+    # never exercised this path. Regression, not a detection-outcome test:
+    # this only asserts the detector runs to completion.
+    gray = _uniform_noise(size=203, mean=170, spread=50)[..., 0]
+    gray[:, -30:] = 20  # dark, flat mass along the right edge
+    finding = detectors.get("F02")(_frame(_rgb3(gray)))
+    assert finding is not None
+    assert finding.taxonomy_id == "F02"
+
+
 # --- F07: empty-space overallocation ------------------------------------
 
 

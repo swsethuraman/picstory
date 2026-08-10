@@ -54,12 +54,22 @@ def test_duplicate_registration_rejected() -> None:
         del base_module._REGISTRY["__test_dup__"]
 
 
+# QUEUE.md item 3 (local metadata/pixel detectors) has landed real logic for
+# these seven IDs - see tests/test_local_detectors.py for their behavior
+# tests. Everything else is still a QUEUE-item-2 registry stub pending item
+# 4 (API-vision detectors) or item 8 (F03's near-duplicate grouping, Stage
+# 2). Shrink this set as those land.
+_STILL_STUBBED = frozenset(
+    {"F03", "F04", "F05", "F06", "F11", "F13", "F14", "F15", "R01", "S01", "S02", "S03", "S04"}
+)
+
+
 def test_unimplemented_stub_raises_not_implemented() -> None:
-    # Every current detector is a QUEUE-item-2 stub; this pins the "loud
-    # stub" contract (base.py) rather than a silent None return. This test
-    # is expected to need loosening/removal as items 3-4 implement real
-    # detectors that return actual results.
-    for taxonomy_id in registered_ids():
+    # Pins the "loud stub" contract (base.py) - a stub must raise rather
+    # than silently returning a fake negative result - for every ID that
+    # hasn't had real detection logic land yet.
+    assert _STILL_STUBBED <= registered_ids()
+    for taxonomy_id in _STILL_STUBBED:
         detector = get(taxonomy_id)
         with pytest.raises(DetectorNotImplemented):
             detector()

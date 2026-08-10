@@ -3,7 +3,10 @@ name = "picstory"
 version = "0.0.1"
 description = "Photo coaching, not curation. See TAXONOMY.md."
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "numpy>=2.4.6",
+    "pillow>=12.3.0",
+]
 
 [dependency-groups]
 dev = ["pytest>=8"]

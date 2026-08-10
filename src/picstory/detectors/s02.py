@@ -1,18 +1,21 @@
-"""S02 · Blue-hour timing — registry stub.
+"""S02 · Blue-hour timing — Anthropic API vision-call detector.
 
-Claims the S02 registry slot (QUEUE.md item 2). Real detection logic
-(vision model call per API-discipline rule) lands in QUEUE.md item 4; until then this stub raises
-DetectorNotImplemented rather than returning a silent negative - a stub
-returning nothing is not an implementation (CLAUDE.md).
+Judgment-dependent per QUEUE.md item 4 and CLAUDE.md's API-discipline rule:
+the call embeds S02's Detection text verbatim (via
+`schema.taxonomy_detection_text`, not a local copy) and returns structured
+output naming S02. See `_vision.py` for the shared call/parse plumbing.
 """
 
 from __future__ import annotations
 
-from picstory.detectors.base import DetectorNotImplemented, register
+from picstory.detectors._vision import VisionCaller, judge
+from picstory.detectors.base import register
+from picstory.frame import Frame
+from picstory.schema import Finding, taxonomy_detection_text
+
+TAXONOMY_ID = "S02"
 
 
-@register("S02")
-def detect(*_args, **_kwargs):
-    raise DetectorNotImplemented(
-        "S02: Blue-hour timing detector not yet implemented (QUEUE.md item 4)"
-    )
+@register(TAXONOMY_ID)
+def detect(frame: Frame, *, caller: VisionCaller | None = None) -> Finding | None:
+    return judge(frame, TAXONOMY_ID, taxonomy_detection_text(TAXONOMY_ID), caller=caller)

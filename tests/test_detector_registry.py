@@ -55,13 +55,15 @@ def test_duplicate_registration_rejected() -> None:
 
 
 # QUEUE.md item 3 (local metadata/pixel detectors) has landed real logic for
-# these seven IDs - see tests/test_local_detectors.py for their behavior
-# tests. Everything else is still a QUEUE-item-2 registry stub pending item
-# 4 (API-vision detectors) or item 8 (F03's near-duplicate grouping, Stage
-# 2). Shrink this set as those land.
-_STILL_STUBBED = frozenset(
-    {"F03", "F04", "F05", "F06", "F11", "F13", "F14", "F15", "R01", "S01", "S02", "S03", "S04"}
-)
+# seven IDs (tests/test_local_detectors.py) and item 4 (API-vision
+# detectors) for nine more (tests/test_vision_detectors.py). Remaining
+# stubs: F03 is Stage 2 item 8 (near-duplicate grouping); R01 is a
+# conditional rule, not yet scheduled; F14 and S03 are deferred per
+# DECISIONS.md D-005 - their Detection text describes a property of a batch
+# of frames, not of any single photo, so they cannot be honestly
+# implemented until Stage 2 gives detectors batch context. Shrink this set
+# as those land.
+_STILL_STUBBED = frozenset({"F03", "F14", "R01", "S03"})
 
 
 def test_unimplemented_stub_raises_not_implemented() -> None:

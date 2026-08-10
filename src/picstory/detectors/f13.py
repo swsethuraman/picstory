@@ -1,18 +1,28 @@
-"""F13 · Missing human scale — registry stub.
+"""F13 · Missing human scale — Anthropic API vision-call detector.
 
-Claims the F13 registry slot (QUEUE.md item 2). Real detection logic
-(vision model call per API-discipline rule) lands in QUEUE.md item 4; until then this stub raises
-DetectorNotImplemented rather than returning a silent negative - a stub
-returning nothing is not an implementation (CLAUDE.md).
+Judgment-dependent per QUEUE.md item 4 and CLAUDE.md's API-discipline rule:
+the call embeds F13's Detection text verbatim (via
+`schema.taxonomy_detection_text`, not a local copy) and returns structured
+output naming F13. See `_vision.py` for the shared call/parse plumbing.
+
+Detection text: "Large subject with nothing indicating its size; the set
+reads as 'one idea repeated,' a record rather than an experience." The
+operative condition - no scale reference for a large subject - is decidable
+from one frame; "the set reads as..." is the batch-level consequence of the
+same per-frame gap recurring, not a separate multi-frame precondition (unlike
+F14/S03 - see DECISIONS.md D-005).
 """
 
 from __future__ import annotations
 
-from picstory.detectors.base import DetectorNotImplemented, register
+from picstory.detectors._vision import VisionCaller, judge
+from picstory.detectors.base import register
+from picstory.frame import Frame
+from picstory.schema import Finding, taxonomy_detection_text
+
+TAXONOMY_ID = "F13"
 
 
-@register("F13")
-def detect(*_args, **_kwargs):
-    raise DetectorNotImplemented(
-        "F13: Missing human scale detector not yet implemented (QUEUE.md item 4)"
-    )
+@register(TAXONOMY_ID)
+def detect(frame: Frame, *, caller: VisionCaller | None = None) -> Finding | None:
+    return judge(frame, TAXONOMY_ID, taxonomy_detection_text(TAXONOMY_ID), caller=caller)

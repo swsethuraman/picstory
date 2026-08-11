@@ -4,13 +4,19 @@ Runs every evaluable taxonomy detector against a single photo and writes the
 full per-ID breakdown through `_report.py` (CLAUDE.md's output-discipline
 rule): full body to outputs/reports/, at most three lines to stdout.
 
-R01 is excluded from the per-frame sweep: TAXONOMY.md's R section frames it
-as "triggered by shooting conditions, not detected in frames" - a
-batch/conditional rule, not a per-photo detector. This is the same
-reasoning schema.py's `Habit` already encodes (R01 is explicitly barred from
-Habit.taxonomy_id). Running it through the same "stub, not yet implemented"
-bucket as F03/F14/S03 would misrepresent a structural exclusion as pending
-per-frame work it will never get.
+R01 and F03 are excluded from the per-frame sweep. R01: TAXONOMY.md's R
+section frames it as "triggered by shooting conditions, not detected in
+frames" - a batch/conditional rule, not a per-photo detector. This is the
+same reasoning schema.py's `Habit` already encodes (R01 is explicitly
+barred from Habit.taxonomy_id). F03: its Detection text ("2-5 consecutive
+frames ... no change in position, focal length, or angle") names a property
+of a run of frames, not of any one photo - `picstory.detectors.f03.detect`
+requires a `batch` kwarg no single-frame call here can supply. Both are
+genuinely implemented (F03 for real, as of QUEUE.md item 8; R01 still a
+stub) - the exclusion is structural, not "pending work," so running either
+through the same "stub" bucket as F14/S03 would misrepresent that.
+`scripts/analyze_batch.py` runs F03 for real at the batch level, once it
+has the frame list this module's one-photo-at-a-time signature never has.
 
 `pick` and `habit` on the output are left `None`. Per schema.py's own
 docstring, both are batch-level (populated from Stage 2 onward, QUEUE.md
@@ -23,7 +29,7 @@ Each detector call is classified into exactly one of four outcomes:
 - detected: a Finding came back - included in the output's findings.
 - clean:    the detector ran and found nothing.
 - stub:     DetectorNotImplemented - QUEUE.md sequencing, not a run-time
-            failure (e.g. F03/F14/S03 pending Stage 2, DECISIONS.md D-005).
+            failure (e.g. F14/S03 pending Stage 2, DECISIONS.md D-005).
 - error:    the detector raised anything else - a vision call failing for
             lack of ANTHROPIC_API_KEY, a spend cap, or a network problem.
             Per CLAUDE.md's spending rule ("if the cap is hit ... treat
@@ -48,7 +54,7 @@ from picstory.frame import Frame, load_frame  # noqa: E402
 from picstory.schema import AnalysisOutput, Finding, FrameAnalysis, taxonomy_ids  # noqa: E402
 
 # Batch/conditional, not a per-frame detector - see module docstring.
-_NOT_PER_FRAME = frozenset({"R01"})
+_NOT_PER_FRAME = frozenset({"R01", "F03"})
 
 
 @dataclass(frozen=True)
@@ -59,8 +65,27 @@ class DetectorRun:
 
 
 def evaluable_ids() -> list[str]:
-    """Taxonomy IDs this CLI sweeps per-frame: every ID except R01."""
+    """Taxonomy IDs this CLI sweeps per-frame: every ID except R01 and F03."""
     return sorted(taxonomy_ids() - _NOT_PER_FRAME)
+
+
+def classify_call(taxonomy_id: str, call) -> tuple[Finding | None, DetectorRun]:
+    """Run one detector call and classify it into detected/clean/stub/error.
+
+    Factored out of `run_analysis` so `scripts/analyze_batch.py` can reuse
+    the exact same classification for F03's batch-level call (which needs a
+    `batch=` kwarg `run_analysis`'s per-frame `detect(frame)` call can't
+    supply) without duplicating the detected/clean/stub/error rules.
+    """
+    try:
+        finding = call()
+    except DetectorNotImplemented as exc:
+        return None, DetectorRun(taxonomy_id, "stub", str(exc))
+    except Exception as exc:  # noqa: BLE001 - a blocked detector is logged, not fatal
+        return None, DetectorRun(taxonomy_id, "error", f"{type(exc).__name__}: {exc}")
+    if finding is None:
+        return None, DetectorRun(taxonomy_id, "clean", None)
+    return finding, DetectorRun(taxonomy_id, "detected", finding.description)
 
 
 def run_analysis(
@@ -81,19 +106,10 @@ def run_analysis(
     runs: list[DetectorRun] = []
     for taxonomy_id in ids:
         detect = detector_lookup(taxonomy_id)
-        try:
-            finding = detect(frame)
-        except DetectorNotImplemented as exc:
-            runs.append(DetectorRun(taxonomy_id, "stub", str(exc)))
-            continue
-        except Exception as exc:  # noqa: BLE001 - a blocked detector is logged, not fatal
-            runs.append(DetectorRun(taxonomy_id, "error", f"{type(exc).__name__}: {exc}"))
-            continue
-        if finding is None:
-            runs.append(DetectorRun(taxonomy_id, "clean", None))
-        else:
+        finding, run = classify_call(taxonomy_id, lambda detect=detect: detect(frame))
+        runs.append(run)
+        if finding is not None:
             findings.append(finding)
-            runs.append(DetectorRun(taxonomy_id, "detected", finding.description))
 
     output = AnalysisOutput(frames=[FrameAnalysis(frame_id=frame.frame_id, findings=findings)])
     return output, runs

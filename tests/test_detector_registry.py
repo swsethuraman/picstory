@@ -55,15 +55,17 @@ def test_duplicate_registration_rejected() -> None:
 
 
 # QUEUE.md item 3 (local metadata/pixel detectors) has landed real logic for
-# seven IDs (tests/test_local_detectors.py) and item 4 (API-vision
-# detectors) for nine more (tests/test_vision_detectors.py). Remaining
-# stubs: F03 is Stage 2 item 8 (near-duplicate grouping); R01 is a
-# conditional rule, not yet scheduled; F14 and S03 are deferred per
-# DECISIONS.md D-005 - their Detection text describes a property of a batch
-# of frames, not of any single photo, so they cannot be honestly
-# implemented until Stage 2 gives detectors batch context. Shrink this set
-# as those land.
-_STILL_STUBBED = frozenset({"F03", "F14", "R01", "S03"})
+# seven IDs (tests/test_local_detectors.py), item 4 (API-vision detectors)
+# for nine more (tests/test_vision_detectors.py), and item 8 for F03
+# (tests/test_duplicates.py, tests/test_cli_analyze_batch.py) - it is no
+# longer a stub, it just requires a `batch` kwarg this registry-level call
+# (no args) can't supply, so it's asserted separately below rather than
+# folded into this set. Remaining stubs: R01 is a conditional rule, not yet
+# scheduled; F14 and S03 are deferred per DECISIONS.md D-005 - their
+# Detection text describes a property of a batch of frames, not of any
+# single photo, so they cannot be honestly implemented until Stage 2 gives
+# detectors batch context. Shrink this set as those land.
+_STILL_STUBBED = frozenset({"F14", "R01", "S03"})
 
 
 def test_unimplemented_stub_raises_not_implemented() -> None:
@@ -80,3 +82,13 @@ def test_unimplemented_stub_raises_not_implemented() -> None:
 def test_detectors_package_exposes_registry_api() -> None:
     assert detectors.get is get
     assert detectors.registered_ids is registered_ids
+
+
+def test_f03_registered_detector_requires_batch_context_not_a_stub() -> None:
+    # F03 is real (item 8), not in _STILL_STUBBED - but a registry-level
+    # call with no args still can't produce an answer, since it needs the
+    # frames around it. That must read as "wrong call," not "unimplemented":
+    # ValueError, never DetectorNotImplemented.
+    detector = get("F03")
+    with pytest.raises(ValueError):
+        detector(object())

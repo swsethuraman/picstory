@@ -41,20 +41,24 @@ def _lookup(table: dict[str, object]):
     return lambda taxonomy_id: table[taxonomy_id]
 
 
-# --- evaluable_ids(): R01 is structurally excluded -----------------------
+# --- evaluable_ids(): R01 and F03 are structurally excluded ---------------
 
 
 def test_evaluable_ids_excludes_the_conditional_batch_rule() -> None:
     # Not named with an ID substring on purpose: this checks CLI wiring
-    # (R01 is structurally excluded from the per-frame sweep), not R01's
-    # actual detection logic, which doesn't exist yet - naming it
-    # "..._r01" would incidentally satisfy test_taxonomy_coverage.py's
-    # per-ID name check without R01 having genuine detector-substance
-    # coverage, which is exactly the gap that guard exists to catch.
+    # (R01 and F03 are structurally excluded from the per-frame sweep -
+    # both need batch context this one-photo-at-a-time module never has),
+    # not either ID's actual detection logic - naming it "..._r01" or
+    # "..._f03" would incidentally satisfy test_taxonomy_coverage.py's
+    # per-ID name check without genuine detector-substance coverage here,
+    # which is exactly the gap that guard exists to catch. F03's real
+    # substance is covered by tests/test_duplicates.py and
+    # tests/test_cli_analyze_batch.py, where its batch context exists.
     ids = analyze.evaluable_ids()
     assert "R01" not in ids
-    assert set(ids) == taxonomy_ids() - {"R01"}
-    assert len(ids) == 19
+    assert "F03" not in ids
+    assert set(ids) == taxonomy_ids() - {"R01", "F03"}
+    assert len(ids) == 18
 
 
 # --- run_analysis(): per-ID classification --------------------------------

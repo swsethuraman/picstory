@@ -27,7 +27,11 @@ def _frame(frame_id: str) -> Frame:
 
 
 def _lookup(table: dict[str, object]):
-    return lambda taxonomy_id: table[taxonomy_id]
+    # F03 always answers "clean" unless a test overrides it - it's the one
+    # ID run_batch_analysis calls itself (_merge_f03), outside whatever
+    # `ids` a test passes, so every fake registry needs an entry for it.
+    full = {"F03": lambda frame, *, batch=None: None, **table}
+    return lambda taxonomy_id: full[taxonomy_id]
 
 
 # --- run_batch_analysis(): reuses analyze.run_analysis per frame ----------
@@ -50,7 +54,7 @@ def test_run_batch_analysis_aggregates_one_frame_analysis_per_frame() -> None:
     assert [fa.frame_id for fa in output.frames] == ["00_a", "01_b", "02_c"]
     assert set(runs_by_frame) == {"00_a", "01_b", "02_c"}
     for frame_id in runs_by_frame:
-        assert {r.taxonomy_id for r in runs_by_frame[frame_id]} == {"F06", "F07"}
+        assert {r.taxonomy_id for r in runs_by_frame[frame_id]} == {"F06", "F07", "F03"}
 
 
 def test_run_batch_analysis_findings_stay_scoped_to_their_own_frame() -> None:
@@ -78,6 +82,45 @@ def test_run_batch_analysis_leaves_pick_and_habit_none() -> None:
     assert output.habit is None
 
 
+def test_run_batch_analysis_runs_f03_once_per_frame_against_the_real_batch() -> None:
+    seen_batches = []
+
+    def f03_detect(frame, *, batch=None):
+        seen_batches.append(batch)
+        return Finding(taxonomy_id="F03", description="copy") if frame.frame_id == "01_b" else None
+
+    lookup = _lookup({"F03": f03_detect})
+    frames = [_frame("00_a"), _frame("01_b"), _frame("02_c")]
+
+    output, runs_by_frame = analyze_batch.run_batch_analysis(frames, detector_lookup=lookup, ids=[])
+
+    by_id = {fa.frame_id: fa for fa in output.frames}
+    assert [f.taxonomy_id for f in by_id["01_b"].findings] == ["F03"]
+    assert by_id["00_a"].findings == []
+    assert runs_by_frame["01_b"][-1].status == "detected"
+    assert runs_by_frame["00_a"][-1].status == "clean"
+    # Called once per frame, each time with the full batch (not a subset).
+    assert len(seen_batches) == 3
+    assert all(b == frames for b in seen_batches)
+
+
+def test_run_batch_analysis_strips_f03_from_an_explicit_ids_override() -> None:
+    # F03 only ever runs through _merge_f03 - passing it in `ids` must not
+    # double-report it via run_analysis's single-frame detect(frame) call,
+    # which would hit picstory.detectors.f03.detect's real ValueError for a
+    # missing `batch` kwarg and misclassify a working detector as "error".
+    lookup = _lookup({})
+    frames = [_frame("00_a")]
+
+    _output, runs_by_frame = analyze_batch.run_batch_analysis(
+        frames, detector_lookup=lookup, ids=["F03"]
+    )
+
+    ids_seen = [r.taxonomy_id for r in runs_by_frame["00_a"]]
+    assert ids_seen.count("F03") == 1
+    assert runs_by_frame["00_a"][0].status == "clean"
+
+
 # --- render_report(): per-frame sections and aggregate counts -------------
 
 
@@ -94,10 +137,13 @@ def test_render_report_includes_per_frame_sections_and_totals() -> None:
         [Path("a.jpg"), Path("b.jpg")], output, runs_by_frame
     )
 
-    assert "2 detected, 2 clean, 0 stub, 0 error" in body
+    # F06 detected + F07 clean per frame from the ["F06", "F07"] sweep, plus
+    # F03 clean per frame from _merge_f03's own always-on batch pass.
+    assert "2 detected, 4 clean, 0 stub, 0 error" in body
     assert "### 00_a:" in body
     assert "### 01_b:" in body
     assert "- F06 [detected] — edge intrusion" in body
+    assert "- F03 [clean]" in body
     assert "pick: None, habit: None" in body
 
 

@@ -9,6 +9,7 @@ detector modules that call these.
 from __future__ import annotations
 
 import numpy as np
+from PIL import Image
 
 
 def sobel_gradients(luminance: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -68,6 +69,35 @@ def downsample(luminance: np.ndarray, max_dim: int = 400) -> np.ndarray:
     trimmed = luminance[:h_trim, :w_trim]
     reshaped = trimmed.reshape(h_trim // scale, scale, w_trim // scale, scale)
     return reshaped.mean(axis=(1, 3))
+
+
+def difference_hash(luminance: np.ndarray, hash_size: int = 8) -> np.ndarray:
+    """Difference hash (dHash): a `hash_size` x `hash_size` bool array.
+
+    Standard dHash: shrink to (hash_size+1) columns by hash_size rows, then
+    each bit is "does luminance increase left-to-right" for one pixel pair.
+    Robust to small resizes/re-encodes, sensitive to real changes in
+    composition (a moved subject, a reframed shot) - which is what makes it
+    a usable proxy for "same position/angle" between two frames, not just
+    "same average brightness."
+
+    The shrink uses PIL's box resampling (area averaging over each output
+    pixel's source block), not nearest-neighbor sampling - critical here,
+    since sampling single pixels from a full-resolution photo would let
+    ordinary sensor noise flip individual comparison bits; averaging a whole
+    block per output pixel suppresses that the same way `downsample` does
+    for the other local detectors.
+    """
+    small_image = Image.fromarray(np.clip(luminance, 0, 255).astype(np.uint8)).resize(
+        (hash_size + 1, hash_size), Image.Resampling.BOX
+    )
+    small = np.asarray(small_image, dtype=np.float64)
+    return small[:, 1:] > small[:, :-1]
+
+
+def hamming_distance(a: np.ndarray, b: np.ndarray) -> int:
+    """Count of differing bits between two equal-shaped bool arrays."""
+    return int(np.count_nonzero(a != b))
 
 
 def largest_connected_area(mask: np.ndarray) -> int:

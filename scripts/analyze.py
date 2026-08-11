@@ -4,13 +4,24 @@ Runs every evaluable taxonomy detector against a single photo and writes the
 full per-ID breakdown through `_report.py` (CLAUDE.md's output-discipline
 rule): full body to outputs/reports/, at most three lines to stdout.
 
-R01 is excluded from the per-frame sweep: TAXONOMY.md's R section frames it
-as "triggered by shooting conditions, not detected in frames" - a
-batch/conditional rule, not a per-photo detector. This is the same
-reasoning schema.py's `Habit` already encodes (R01 is explicitly barred from
-Habit.taxonomy_id). Running it through the same "stub, not yet implemented"
-bucket as F03/F14/S03 would misrepresent a structural exclusion as pending
-per-frame work it will never get.
+R01 and F03 are excluded from the per-frame sweep, for two different
+reasons:
+
+- R01: TAXONOMY.md's R section frames it as "triggered by shooting
+  conditions, not detected in frames" - a batch/conditional rule, not a
+  per-photo detector. This is the same reasoning schema.py's `Habit`
+  already encodes (R01 is explicitly barred from Habit.taxonomy_id).
+- F03: its Detection text ("2-5 consecutive frames ...") names a property
+  of a run of frames, not of any one photo (see
+  `picstory.detectors.f03`'s module docstring). Its real `detect()` takes
+  the whole batch, not one `Frame`, so it does not fit this module's
+  one-frame-in dispatch loop at all - not even as a "clean" result, since a
+  single photo genuinely has no "consecutive frames" to compare against.
+  `scripts/analyze_batch.py` is where F03 actually runs.
+
+Running either through the same "stub, not yet implemented" bucket as
+F14/S03 would misrepresent a structural exclusion as pending per-frame work
+it will never get.
 
 `pick` and `habit` on the output are left `None`. Per schema.py's own
 docstring, both are batch-level (populated from Stage 2 onward, QUEUE.md
@@ -47,8 +58,8 @@ from picstory.detectors.base import DetectorNotImplemented  # noqa: E402
 from picstory.frame import Frame, load_frame  # noqa: E402
 from picstory.schema import AnalysisOutput, Finding, FrameAnalysis, taxonomy_ids  # noqa: E402
 
-# Batch/conditional, not a per-frame detector - see module docstring.
-_NOT_PER_FRAME = frozenset({"R01"})
+# Not evaluable one frame at a time - see module docstring.
+_NOT_PER_FRAME = frozenset({"R01", "F03"})
 
 
 @dataclass(frozen=True)
@@ -59,7 +70,7 @@ class DetectorRun:
 
 
 def evaluable_ids() -> list[str]:
-    """Taxonomy IDs this CLI sweeps per-frame: every ID except R01."""
+    """Taxonomy IDs this CLI sweeps per-frame: every ID except R01 and F03."""
     return sorted(taxonomy_ids() - _NOT_PER_FRAME)
 
 
@@ -117,7 +128,8 @@ def render_report(photo: Path, frame: Frame, output: AnalysisOutput, runs: list[
             f"{counts['detected']} detected, {counts['clean']} clean, "
             f"{counts['stub']} stub, {counts['error']} error "
             f"(of {len(runs)} evaluable IDs; R01 excluded - batch/conditional, "
-            "not a per-frame detector)"
+            "not a per-frame detector; F03 excluded - needs a batch to compare "
+            "against, see scripts/analyze_batch.py)"
         ),
         "",
         "pick: None, habit: None - both are batch-level (schema.py: "

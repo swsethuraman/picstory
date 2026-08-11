@@ -1,16 +1,25 @@
-"""CLI: a batch of 5-50 photos in -> per-frame analysis out (QUEUE.md Stage 2, item 7).
+"""CLI: a batch of 5-50 photos in -> per-frame analysis out (QUEUE.md Stage 2, items 7-8).
 
 "Per-frame analysis reusing Stage 1": this does not reimplement per-ID
 dispatch/classification. Each frame in the batch is run straight through
 `analyze.run_analysis` - the same function, same detected/clean/stub/error
-classification, same R01 exclusion - and the results are collected into one
-`AnalysisOutput` with one `FrameAnalysis` per frame.
+classification, same R01/F03 exclusion from the per-frame sweep - and the
+results are collected into one `AnalysisOutput` with one `FrameAnalysis`
+per frame.
 
-What this queue item is *not*: near-duplicate grouping (F03, item 8),
-ranking/shortlist (item 9), and the session habit (item 10) are separate,
-later queue items. `pick` and `habit` stay `None` on the output for the same
-reason `scripts/analyze.py` leaves them `None` - nothing in this item
-computes either.
+F03 (near-duplicate grouping, item 8) is exactly the detector that per-frame
+sweep cannot run - its Detection text names "consecutive frames," a batch
+property (see `picstory.detectors.f03`'s module docstring). This is the
+first module with an actual batch to give it, so `run_batch_analysis` runs
+it once, across the whole ordered batch, after the per-frame sweep, and
+merges any resulting findings into their frames' `FrameAnalysis.findings` -
+the same detected/clean/stub/error classification as every other ID, not a
+separate code path with different semantics.
+
+What this queue item is *not*: ranking/shortlist (item 9) and the session
+habit (item 10) are separate, later queue items. `pick` and `habit` stay
+`None` on the output for the same reason `scripts/analyze.py` leaves them
+`None` - nothing in this item computes either.
 """
 
 from __future__ import annotations
@@ -26,8 +35,29 @@ from analyze import DetectorRun, evaluable_ids, run_analysis  # noqa: E402
 
 from picstory import detectors  # noqa: E402
 from picstory.batch import load_batch  # noqa: E402
+from picstory.detectors.base import DetectorNotImplemented  # noqa: E402
 from picstory.frame import Frame  # noqa: E402
 from picstory.schema import AnalysisOutput, FrameAnalysis  # noqa: E402
+
+
+def _run_f03(
+    frames: list[Frame], detector_lookup
+) -> tuple[dict[str, object], str | None, str | None]:
+    """Run the batch-level F03 detector once; classify like any other ID.
+
+    Returns `(findings_by_frame_id, error_status, error_detail)`.
+    `error_status`/`error_detail` are set (and `findings_by_frame_id` empty)
+    on "stub"/"error", mirroring `analyze.run_analysis`'s per-ID try/except
+    so F03 gets the same three-way outcome (detected/clean vs. stub vs.
+    error) as every ID the per-frame loop already classifies.
+    """
+    detect_f03 = detector_lookup("F03")
+    try:
+        return detect_f03(frames), None, None
+    except DetectorNotImplemented as exc:
+        return {}, "stub", str(exc)
+    except Exception as exc:  # noqa: BLE001 - a blocked detector is logged, not fatal
+        return {}, "error", f"{type(exc).__name__}: {exc}"
 
 
 def run_batch_analysis(
@@ -36,11 +66,14 @@ def run_batch_analysis(
     detector_lookup=detectors.get,
     ids: list[str] | None = None,
 ) -> tuple[AnalysisOutput, dict[str, list[DetectorRun]]]:
-    """Run Stage 1's per-frame sweep over every frame in a batch.
+    """Run Stage 1's per-frame sweep over every frame in a batch, then F03.
 
     `detector_lookup` is threaded through unchanged so tests can inject a
     fake registry exactly as `test_cli_analyze.py` does for the single-photo
     CLI - no live API key or network needed to exercise this dispatch logic.
+    `ids` (default `evaluable_ids()`, which already excludes F03) governs
+    only the per-frame sweep; F03 always runs once via `detector_lookup`
+    regardless of `ids`, since it is not part of that sweep at all.
     """
     ids = evaluable_ids() if ids is None else ids
     frame_analyses: list[FrameAnalysis] = []
@@ -49,6 +82,23 @@ def run_batch_analysis(
         output, runs = run_analysis(frame, detector_lookup=detector_lookup, ids=ids)
         frame_analyses.append(output.frames[0])
         runs_by_frame[frame.frame_id] = runs
+
+    f03_findings, f03_error_status, f03_error_detail = _run_f03(frames, detector_lookup)
+    for frame_analysis in frame_analyses:
+        if f03_error_status is not None:
+            runs_by_frame[frame_analysis.frame_id].append(
+                DetectorRun("F03", f03_error_status, f03_error_detail)
+            )
+            continue
+        finding = f03_findings.get(frame_analysis.frame_id)
+        if finding is None:
+            runs_by_frame[frame_analysis.frame_id].append(DetectorRun("F03", "clean", None))
+        else:
+            frame_analysis.findings.append(finding)
+            runs_by_frame[frame_analysis.frame_id].append(
+                DetectorRun("F03", "detected", finding.description)
+            )
+
     return AnalysisOutput(frames=frame_analyses), runs_by_frame
 
 
@@ -75,11 +125,12 @@ def render_report(
             f"{counts['detected']} detected, {counts['clean']} clean, "
             f"{counts['stub']} stub, {counts['error']} error "
             f"across {len(output.frames)} frames x {ids_per_frame} evaluable IDs "
-            "each (R01 excluded - batch/conditional, not a per-frame detector)"
+            "each (R01 excluded - batch/conditional, not a per-frame detector; "
+            "F03 included, evaluated once across the batch rather than per-frame)"
         ),
         "",
-        "pick: None, habit: None - not computed by this queue item (near-duplicate "
-        "grouping is item 8, ranking is item 9, the session habit is item 10).",
+        "pick: None, habit: None - not computed by this queue item (ranking is "
+        "item 9, the session habit is item 10).",
         "",
         "## Per-frame results",
         "",

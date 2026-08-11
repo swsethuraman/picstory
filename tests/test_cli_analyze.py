@@ -41,7 +41,7 @@ def _lookup(table: dict[str, object]):
     return lambda taxonomy_id: table[taxonomy_id]
 
 
-# --- evaluable_ids(): R01 is structurally excluded -----------------------
+# --- evaluable_ids(): R01 and F03 are structurally excluded ---------------
 
 
 def test_evaluable_ids_excludes_the_conditional_batch_rule() -> None:
@@ -51,10 +51,18 @@ def test_evaluable_ids_excludes_the_conditional_batch_rule() -> None:
     # "..._r01" would incidentally satisfy test_taxonomy_coverage.py's
     # per-ID name check without R01 having genuine detector-substance
     # coverage, which is exactly the gap that guard exists to catch.
+    #
+    # F03 is excluded for a different reason (it takes a whole batch, not
+    # one Frame - see picstory.detectors.f03's module docstring) but the
+    # same "no incidental ID-name coverage" concern doesn't apply to it:
+    # F03 already has genuine detector-substance tests naming it
+    # (tests/test_f03_safety_copies.py), so asserting its exclusion here
+    # by name doesn't launder missing coverage the way it would for R01.
     ids = analyze.evaluable_ids()
     assert "R01" not in ids
-    assert set(ids) == taxonomy_ids() - {"R01"}
-    assert len(ids) == 19
+    assert "F03" not in ids
+    assert set(ids) == taxonomy_ids() - {"R01", "F03"}
+    assert len(ids) == 18
 
 
 # --- run_analysis(): per-ID classification --------------------------------

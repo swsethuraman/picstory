@@ -55,15 +55,17 @@ def test_duplicate_registration_rejected() -> None:
 
 
 # QUEUE.md item 3 (local metadata/pixel detectors) has landed real logic for
-# seven IDs (tests/test_local_detectors.py) and item 4 (API-vision
-# detectors) for nine more (tests/test_vision_detectors.py). Remaining
-# stubs: F03 is Stage 2 item 8 (near-duplicate grouping); R01 is a
-# conditional rule, not yet scheduled; F14 and S03 are deferred per
-# DECISIONS.md D-005 - their Detection text describes a property of a batch
-# of frames, not of any single photo, so they cannot be honestly
-# implemented until Stage 2 gives detectors batch context. Shrink this set
-# as those land.
-_STILL_STUBBED = frozenset({"F03", "F14", "R01", "S03"})
+# seven IDs (tests/test_local_detectors.py), item 4 (API-vision detectors)
+# for nine more (tests/test_vision_detectors.py), and item 8 for F03
+# (tests/test_f03_safety_copies.py - a batch-level detector, so it is
+# exercised there rather than through this file's zero-arg stub-call
+# pattern below). Remaining stubs: R01 is a conditional rule, not yet
+# scheduled; F14 and S03 are deferred per DECISIONS.md D-005 - their
+# Detection text describes a property of a batch of frames, not of any
+# single photo, so they cannot be honestly implemented until Stage 2 gives
+# detectors batch context (which F03 now has and uses). Shrink this set as
+# those land.
+_STILL_STUBBED = frozenset({"F14", "R01", "S03"})
 
 
 def test_unimplemented_stub_raises_not_implemented() -> None:

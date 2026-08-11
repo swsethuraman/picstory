@@ -15,6 +15,7 @@ from picstory.schema import (
     Habit,
     Pick,
     SchemaError,
+    taxonomy_correction_text,
     taxonomy_detection_text,
     taxonomy_ids,
     taxonomy_reinforcement_text,
@@ -163,3 +164,29 @@ def test_taxonomy_reinforcement_text_missing_for_f_and_r_items() -> None:
 
 def test_taxonomy_reinforcement_text_distinct_from_detection_text() -> None:
     assert taxonomy_reinforcement_text("S01") != taxonomy_detection_text("S01")
+
+
+def test_taxonomy_correction_text_matches_taxonomy_md_verbatim() -> None:
+    # Hand-transcribed from TAXONOMY.md - same drift guard as the
+    # Reinforcement-text test above.
+    assert taxonomy_correction_text("F01") == (
+        "Stay at true optical focal lengths (1x / 2x / 5x). Need tighter? "
+        "Move closer, or crop in edit."
+    )
+    assert taxonomy_correction_text("F06") == (
+        "Sweep all four edges before pressing the shutter. Commit fully: a "
+        "whole label or none. Crop as salvage."
+    )
+
+
+def test_taxonomy_correction_text_missing_for_s_and_r_items() -> None:
+    # Only F-items have a Correction bullet - S-items have Reinforcement
+    # instead, R01 has neither.
+    with pytest.raises(SchemaError):
+        taxonomy_correction_text("S01")
+    with pytest.raises(SchemaError):
+        taxonomy_correction_text("R01")
+
+
+def test_taxonomy_correction_text_distinct_from_detection_text() -> None:
+    assert taxonomy_correction_text("F01") != taxonomy_detection_text("F01")

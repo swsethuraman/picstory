@@ -1,4 +1,4 @@
-"""Ranking + shortlist (QUEUE.md Stage 2, item 9).
+"""Ranking + shortlist (QUEUE.md Stage 2, item 9) and the session habit (item 10).
 
 TAXONOMY.md's output-mapping table settles the vocabulary this module is
 allowed to use, before any ranking logic gets written: "The pick (and the
@@ -38,11 +38,22 @@ TAXONOMY.md to implement, only this one mapping. So:
   requirement read the same way CLAUDE.md's API-discipline rule reads
   "embeds the item's Detection text": from the frozen source, not a
   hand-copied paraphrase that could drift.
+- The habit (item 10) is "whichever F- or S-item recurs most in the batch"
+  (same table), counted by number of frames carrying that ID, R01/
+  unclassified excluded (see `compute_habit`'s own docstring for the
+  reasoning, including its Correction-vs-Reinforcement coaching-text split
+  and its documented tie-break).
 """
 
 from __future__ import annotations
 
-from picstory.schema import FrameAnalysis, Pick, taxonomy_reinforcement_text
+from picstory.schema import (
+    FrameAnalysis,
+    Habit,
+    Pick,
+    taxonomy_correction_text,
+    taxonomy_reinforcement_text,
+)
 
 
 def _ids_with_prefix(frame_analysis: FrameAnalysis, prefix: str) -> list[str]:
@@ -87,3 +98,45 @@ def build_pick(frame_analyses: list[FrameAnalysis]) -> Pick | None:
 def share_list_lines(pick: Pick) -> list[str]:
     """One share-list one-liner per S-item reason, in TAXONOMY.md's own Reinforcement wording."""
     return [f"{taxonomy_id} — {taxonomy_reinforcement_text(taxonomy_id)}" for taxonomy_id in pick.reasons]
+
+
+def compute_habit(frame_analyses: list[FrameAnalysis]) -> Habit | None:
+    """The session habit: whichever F- or S-item recurs most across the batch.
+
+    TAXONOMY.md's output-mapping table: "Whichever F- or S-item recurs most
+    in the batch; reinforcement counts as coaching." Recurrence is counted
+    per distinct frame carrying the ID - a `FrameAnalysis` structurally has
+    at most one `Finding` per ID (see `_ids_with_prefix`'s docstring), so
+    this is "how many frames have this ID," not a raw finding count. R01
+    (never a per-frame `Finding` - see scripts/analyze.py's module
+    docstring) and `unclassified` (neither polarity, no coaching text in
+    TAXONOMY.md) are excluded, the same exclusion `score_frame` already
+    applies to.
+
+    "Reinforcement counts as coaching" reads as the symmetric statement for
+    S-items that F-items already get from their own Correction bullet -
+    Habit.description is the winning ID's Correction text if it's an
+    F-item, its Reinforcement text if it's an S-item, both read verbatim via
+    `schema.py` (same single-source-of-truth reasoning as `share_list_lines`
+    uses for Reinforcement text).
+
+    Ties break by taxonomy ID (ascending). TAXONOMY.md does not specify a
+    tie-break for "recurs most" under a genuine tie; this makes the choice
+    deterministic and documented rather than leaving it to dict iteration
+    order, consistent with `_ids_with_prefix`'s own ID-order sorting
+    elsewhere in this module.
+
+    `None` for a batch with no F- or S-item finding anywhere - nothing
+    recurs, so there is nothing to name a habit.
+    """
+    counts: dict[str, int] = {}
+    for frame_analysis in frame_analyses:
+        for taxonomy_id in _ids_with_prefix(frame_analysis, "F") + _ids_with_prefix(frame_analysis, "S"):
+            counts[taxonomy_id] = counts.get(taxonomy_id, 0) + 1
+    if not counts:
+        return None
+    winner = max(sorted(counts), key=counts.get)
+    description = (
+        taxonomy_correction_text(winner) if winner.startswith("F") else taxonomy_reinforcement_text(winner)
+    )
+    return Habit(taxonomy_id=winner, description=description)

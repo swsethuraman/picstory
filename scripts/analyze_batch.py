@@ -20,9 +20,9 @@ Ranking/shortlist (item 9) is now wired in too: once the per-frame sweep and
 F03's merge have produced the batch's final findings, `picstory.ranking`
 scores every frame (S-item findings for, F-item findings against - see that
 module's docstring for why) and `run_batch_analysis` sets `AnalysisOutput.pick`
-from the top-ranked frame. The session habit (item 10) is still a separate,
-later queue item; `habit` stays `None` on the output for the same reason
-`scripts/analyze.py` leaves it `None` - nothing in this item computes it.
+from the top-ranked frame. The session habit (item 10) runs over the same
+final findings: `ranking.compute_habit` sets `AnalysisOutput.habit` to
+whichever F- or S-item recurs across the most frames.
 """
 
 from __future__ import annotations
@@ -106,7 +106,8 @@ def run_batch_analysis(
             )
 
     pick = ranking.build_pick(frame_analyses)
-    return AnalysisOutput(frames=frame_analyses, pick=pick), runs_by_frame
+    habit = ranking.compute_habit(frame_analyses)
+    return AnalysisOutput(frames=frame_analyses, pick=pick, habit=habit), runs_by_frame
 
 
 def _counts(runs: list[DetectorRun]) -> dict[str, int]:
@@ -136,7 +137,11 @@ def render_report(
             "F03 included, evaluated once across the batch rather than per-frame)"
         ),
         "",
-        "habit: None - not computed by this queue item (session habit is item 10).",
+        (
+            f"habit: {output.habit.taxonomy_id} — {output.habit.description}"
+            if output.habit is not None
+            else "habit: None (no F- or S-item finding recurred across the batch)"
+        ),
         "",
         "## Shortlist (ranked, best score first; ties keep batch order)",
         "",

@@ -33,6 +33,10 @@ _REINFORCEMENT_LINE = re.compile(
     r"^### (?P<id>[FSR]\d{2}) ·.*\n(?:^-.*\n)*?^- \*\*Reinforcement:\*\* (?P<text>.+)$",
     re.MULTILINE,
 )
+_CORRECTION_LINE = re.compile(
+    r"^### (?P<id>[FSR]\d{2}) ·.*\n(?:^-.*\n)*?^- \*\*Correction:\*\* (?P<text>.+)$",
+    re.MULTILINE,
+)
 
 
 class SchemaError(ValueError):
@@ -94,6 +98,28 @@ def taxonomy_reinforcement_text(taxonomy_id: str) -> str:
         return _reinforcement_texts()[taxonomy_id]
     except KeyError:
         raise SchemaError(f"no Reinforcement text found for taxonomy_id {taxonomy_id!r}") from None
+
+
+@lru_cache(maxsize=1)
+def _correction_texts() -> dict[str, str]:
+    text = _TAXONOMY_MD.read_text(encoding="utf-8")
+    return {m.group("id"): m.group("text").strip() for m in _CORRECTION_LINE.finditer(text)}
+
+
+def taxonomy_correction_text(taxonomy_id: str) -> str:
+    """The exact Correction text for one F-item, parsed verbatim from TAXONOMY.md.
+
+    Same verbatim-source-of-truth reasoning as `taxonomy_reinforcement_text`:
+    the habit (QUEUE.md item 10) is "drawn from TAXONOMY.md by ID"
+    (PREDICTION.md) and the output-mapping table's "reinforcement counts as
+    coaching" line implies the symmetric read for F-items - Correction is
+    their coaching text, the same role Reinforcement plays for S-items. Only
+    F-items carry a Correction bullet; S/R items raise.
+    """
+    try:
+        return _correction_texts()[taxonomy_id]
+    except KeyError:
+        raise SchemaError(f"no Correction text found for taxonomy_id {taxonomy_id!r}") from None
 
 
 @dataclass

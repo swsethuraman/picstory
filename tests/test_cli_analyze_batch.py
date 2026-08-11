@@ -81,13 +81,17 @@ def test_run_batch_analysis_findings_stay_scoped_to_their_own_frame() -> None:
     assert by_id["02_c"].findings == []
 
 
-def test_run_batch_analysis_leaves_pick_and_habit_none() -> None:
+def test_run_batch_analysis_leaves_habit_none_but_computes_pick() -> None:
+    """Habit is item 10, still unimplemented; pick is item 9, wired in this session."""
     lookup = _lookup({"F07": lambda frame: None})
     output, _runs = analyze_batch.run_batch_analysis(
         [_frame("00_a")], detector_lookup=lookup, ids=["F07"]
     )
-    assert output.pick is None
     assert output.habit is None
+    assert output.pick is not None
+    assert output.pick.frame_id == "00_a"
+    assert output.pick.reasons == []
+    assert output.pick.disqualifiers == []
 
 
 # --- run_batch_analysis(): F03's batch-level pass (item 8) -----------------
@@ -153,6 +157,66 @@ def test_run_batch_analysis_classifies_f03_error_like_a_per_frame_error() -> Non
         assert "boom" in f03_run.detail
 
 
+# --- run_batch_analysis(): ranking + pick (item 9) -------------------------
+
+
+def test_run_batch_analysis_picks_the_highest_scoring_frame() -> None:
+    def by_frame(findings: dict[str, str]):
+        return lambda frame: (
+            Finding(taxonomy_id=findings[frame.frame_id], description="x")
+            if frame.frame_id in findings
+            else None
+        )
+
+    lookup = _lookup(
+        {
+            # 00_a: no findings (score 0). 01_b: one S-item (score 1).
+            # 02_c: two F-items (score -2).
+            "S01": by_frame({"01_b": "S01"}),
+            "F06": by_frame({"02_c": "F06"}),
+            "F07": by_frame({"02_c": "F07"}),
+        }
+    )
+    frames = [_frame("00_a"), _frame("01_b"), _frame("02_c")]
+
+    output, _runs = analyze_batch.run_batch_analysis(
+        frames, detector_lookup=lookup, ids=["S01", "F06", "F07"]
+    )
+
+    assert output.pick.frame_id == "01_b"
+    assert output.pick.reasons == ["S01"]
+    assert output.pick.disqualifiers == []
+
+
+def test_run_batch_analysis_pick_disqualifiers_include_the_pick_s_own_f03_finding() -> None:
+    """F03's batch-level merge happens before ranking, so it counts like any other F-item."""
+
+    def f03_findings(frames):
+        return {"00_a": Finding(taxonomy_id="F03", description="safety copy of '01_b'")}
+
+    lookup = _lookup({"F07": lambda frame: None, "F03": f03_findings})
+    frames = [_frame("00_a"), _frame("01_b")]
+
+    output, _runs = analyze_batch.run_batch_analysis(
+        frames, detector_lookup=lookup, ids=["F07"]
+    )
+
+    # 00_a scores -1 (its own F03 finding); 01_b scores 0 (clean) and wins.
+    assert output.pick.frame_id == "01_b"
+    assert output.pick.disqualifiers == []
+
+
+def test_run_batch_analysis_pick_ties_keep_batch_order() -> None:
+    lookup = _lookup({"F07": lambda frame: None})
+    frames = [_frame("00_a"), _frame("01_b"), _frame("02_c")]
+
+    output, _runs = analyze_batch.run_batch_analysis(
+        frames, detector_lookup=lookup, ids=["F07"]
+    )
+
+    assert output.pick.frame_id == "00_a"
+
+
 # --- render_report(): per-frame sections and aggregate counts -------------
 
 
@@ -174,7 +238,13 @@ def test_render_report_includes_per_frame_sections_and_totals() -> None:
     assert "### 00_a:" in body
     assert "### 01_b:" in body
     assert "- F06 [detected] — edge intrusion" in body
-    assert "pick: None, habit: None" in body
+    assert "habit: None" in body
+    # Both frames carry the same F06 finding and tie on score -1; the tie
+    # keeps batch order, so 00_a (first) is the pick.
+    assert "1. 00_a (score -1)" in body
+    assert "2. 01_b (score -1)" in body
+    assert "frame_id: 00_a" in body
+    assert "disqualifiers (F-items still present): ['F06']" in body
 
 
 # --- main(): end-to-end through real (tiny, on-disk) images ---------------

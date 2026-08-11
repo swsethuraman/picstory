@@ -16,10 +16,13 @@ merges any resulting findings into their frames' `FrameAnalysis.findings` -
 the same detected/clean/stub/error classification as every other ID, not a
 separate code path with different semantics.
 
-What this queue item is *not*: ranking/shortlist (item 9) and the session
-habit (item 10) are separate, later queue items. `pick` and `habit` stay
-`None` on the output for the same reason `scripts/analyze.py` leaves them
-`None` - nothing in this item computes either.
+Ranking/shortlist (item 9) is now wired in too: once the per-frame sweep and
+F03's merge have produced the batch's final findings, `picstory.ranking`
+scores every frame (S-item findings for, F-item findings against - see that
+module's docstring for why) and `run_batch_analysis` sets `AnalysisOutput.pick`
+from the top-ranked frame. The session habit (item 10) is still a separate,
+later queue item; `habit` stays `None` on the output for the same reason
+`scripts/analyze.py` leaves it `None` - nothing in this item computes it.
 """
 
 from __future__ import annotations
@@ -33,7 +36,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _report import report  # noqa: E402
 from analyze import DetectorRun, evaluable_ids, run_analysis  # noqa: E402
 
-from picstory import detectors  # noqa: E402
+from picstory import detectors, ranking  # noqa: E402
 from picstory.batch import load_batch  # noqa: E402
 from picstory.detectors.base import DetectorNotImplemented  # noqa: E402
 from picstory.frame import Frame  # noqa: E402
@@ -66,14 +69,17 @@ def run_batch_analysis(
     detector_lookup=detectors.get,
     ids: list[str] | None = None,
 ) -> tuple[AnalysisOutput, dict[str, list[DetectorRun]]]:
-    """Run Stage 1's per-frame sweep over every frame in a batch, then F03.
+    """Run Stage 1's per-frame sweep over every frame in a batch, then F03, then ranking.
 
     `detector_lookup` is threaded through unchanged so tests can inject a
     fake registry exactly as `test_cli_analyze.py` does for the single-photo
     CLI - no live API key or network needed to exercise this dispatch logic.
     `ids` (default `evaluable_ids()`, which already excludes F03) governs
     only the per-frame sweep; F03 always runs once via `detector_lookup`
-    regardless of `ids`, since it is not part of that sweep at all.
+    regardless of `ids`, since it is not part of that sweep at all. Ranking
+    (item 9) runs last, over the final per-frame findings (F03's merge
+    included), so a safety-copy finding counts against its frame's score the
+    same as any other F-item would.
     """
     ids = evaluable_ids() if ids is None else ids
     frame_analyses: list[FrameAnalysis] = []
@@ -99,7 +105,8 @@ def run_batch_analysis(
                 DetectorRun("F03", "detected", finding.description)
             )
 
-    return AnalysisOutput(frames=frame_analyses), runs_by_frame
+    pick = ranking.build_pick(frame_analyses)
+    return AnalysisOutput(frames=frame_analyses, pick=pick), runs_by_frame
 
 
 def _counts(runs: list[DetectorRun]) -> dict[str, int]:
@@ -129,12 +136,32 @@ def render_report(
             "F03 included, evaluated once across the batch rather than per-frame)"
         ),
         "",
-        "pick: None, habit: None - not computed by this queue item (ranking is "
-        "item 9, the session habit is item 10).",
+        "habit: None - not computed by this queue item (session habit is item 10).",
         "",
-        "## Per-frame results",
+        "## Shortlist (ranked, best score first; ties keep batch order)",
         "",
     ]
+    for rank_position, frame_analysis in enumerate(ranking.rank_frames(output.frames), start=1):
+        lines.append(
+            f"{rank_position}. {frame_analysis.frame_id} "
+            f"(score {ranking.score_frame(frame_analysis)})"
+        )
+
+    lines += ["", "## Pick", ""]
+    if output.pick is None:
+        lines.append("pick: None (empty batch)")
+    else:
+        lines.append(f"frame_id: {output.pick.frame_id}")
+        lines.append(f"disqualifiers (F-items still present): {output.pick.disqualifiers or 'none'}")
+        lines.append("share list:")
+        share_lines = ranking.share_list_lines(output.pick)
+        if share_lines:
+            for share_line in share_lines:
+                lines.append(f"- {share_line}")
+        else:
+            lines.append("- (no S-item findings on the pick)")
+
+    lines += ["", "## Per-frame results", ""]
     for frame_analysis in output.frames:
         runs = runs_by_frame[frame_analysis.frame_id]
         fcounts = _counts(runs)

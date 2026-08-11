@@ -29,6 +29,10 @@ _DETECTION_LINE = re.compile(
     r"^### (?P<id>[FSR]\d{2}) ·.*\n(?:^-.*\n)*?^- \*\*Detection:\*\* (?P<text>.+)$",
     re.MULTILINE,
 )
+_REINFORCEMENT_LINE = re.compile(
+    r"^### (?P<id>[FSR]\d{2}) ·.*\n(?:^-.*\n)*?^- \*\*Reinforcement:\*\* (?P<text>.+)$",
+    re.MULTILINE,
+)
 
 
 class SchemaError(ValueError):
@@ -66,6 +70,30 @@ def taxonomy_detection_text(taxonomy_id: str) -> str:
         return _detection_texts()[taxonomy_id]
     except KeyError:
         raise SchemaError(f"no Detection text found for taxonomy_id {taxonomy_id!r}") from None
+
+
+@lru_cache(maxsize=1)
+def _reinforcement_texts() -> dict[str, str]:
+    text = _TAXONOMY_MD.read_text(encoding="utf-8")
+    return {m.group("id"): m.group("text").strip() for m in _REINFORCEMENT_LINE.finditer(text)}
+
+
+def taxonomy_reinforcement_text(taxonomy_id: str) -> str:
+    """The exact Reinforcement text for one S-item, parsed verbatim from TAXONOMY.md.
+
+    Same verbatim-source-of-truth reasoning as `taxonomy_detection_text`
+    (QUEUE.md item 9 needs share-list one-liners "drawn from S-item
+    vocabulary" - TAXONOMY.md's own output-mapping table names S-items as
+    the "why it's share-worthy" one-liners). Reading the Reinforcement bullet
+    here rather than paraphrasing it into the ranking module makes drift
+    structurally impossible, the same way `taxonomy_detection_text` does for
+    detector prompts. Only S-items carry a Reinforcement bullet; F/R items
+    raise.
+    """
+    try:
+        return _reinforcement_texts()[taxonomy_id]
+    except KeyError:
+        raise SchemaError(f"no Reinforcement text found for taxonomy_id {taxonomy_id!r}") from None
 
 
 @dataclass

@@ -15,7 +15,9 @@ from picstory.schema import (
     Habit,
     Pick,
     SchemaError,
+    taxonomy_detection_text,
     taxonomy_ids,
+    taxonomy_reinforcement_text,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -137,3 +139,27 @@ def test_json_schema_file_ids_match_taxonomy() -> None:
 def test_json_schema_file_is_valid_json() -> None:
     schema = json.loads((ROOT / "schema" / "analysis.json").read_text(encoding="utf-8"))
     assert schema["properties"]["schema_version"]["const"] == SCHEMA_VERSION
+
+
+def test_taxonomy_reinforcement_text_matches_taxonomy_md_verbatim() -> None:
+    # Hand-transcribed from TAXONOMY.md so this test fails if either the
+    # parser or the frozen source drifts - same guard style as the existing
+    # detection-text tests in test_vision_detectors.py.
+    assert taxonomy_reinforcement_text("S01") == (
+        "These consistently outrank empty landmark shots — keep leading with people."
+    )
+    assert taxonomy_reinforcement_text("S04") == (
+        "Produced the trip's best still-life frame (the red vessel in the white niche)."
+    )
+
+
+def test_taxonomy_reinforcement_text_missing_for_f_and_r_items() -> None:
+    # F/R items have no Reinforcement bullet in TAXONOMY.md - only S-items do.
+    with pytest.raises(SchemaError):
+        taxonomy_reinforcement_text("F06")
+    with pytest.raises(SchemaError):
+        taxonomy_reinforcement_text("R01")
+
+
+def test_taxonomy_reinforcement_text_distinct_from_detection_text() -> None:
+    assert taxonomy_reinforcement_text("S01") != taxonomy_detection_text("S01")

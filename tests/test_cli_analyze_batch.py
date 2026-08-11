@@ -22,7 +22,7 @@ import analyze_batch  # noqa: E402
 from picstory.batch import MIN_BATCH_SIZE, load_batch  # noqa: E402
 from picstory.detectors.base import DetectorNotImplemented  # noqa: E402
 from picstory.frame import Frame  # noqa: E402
-from picstory.schema import Finding  # noqa: E402
+from picstory.schema import Finding, taxonomy_correction_text  # noqa: E402
 
 
 def _frame(frame_id: str) -> Frame:
@@ -81,8 +81,8 @@ def test_run_batch_analysis_findings_stay_scoped_to_their_own_frame() -> None:
     assert by_id["02_c"].findings == []
 
 
-def test_run_batch_analysis_leaves_habit_none_but_computes_pick() -> None:
-    """Habit is item 10, still unimplemented; pick is item 9, wired in this session."""
+def test_run_batch_analysis_habit_none_when_nothing_recurs() -> None:
+    """A batch with zero F/S findings has nothing to name a habit from."""
     lookup = _lookup({"F07": lambda frame: None})
     output, _runs = analyze_batch.run_batch_analysis(
         [_frame("00_a")], detector_lookup=lookup, ids=["F07"]
@@ -92,6 +92,35 @@ def test_run_batch_analysis_leaves_habit_none_but_computes_pick() -> None:
     assert output.pick.frame_id == "00_a"
     assert output.pick.reasons == []
     assert output.pick.disqualifiers == []
+
+
+def test_run_batch_analysis_habit_is_most_recurrent_f_or_s_item() -> None:
+    def detected(frame):
+        return Finding(taxonomy_id="F06", description="edge")
+
+    lookup = _lookup({"F06": detected, "F07": lambda frame: None})
+    frames = [_frame("00_a"), _frame("01_b"), _frame("02_c")]
+
+    output, _runs = analyze_batch.run_batch_analysis(frames, detector_lookup=lookup, ids=["F06", "F07"])
+
+    assert output.habit is not None
+    assert output.habit.taxonomy_id == "F06"
+    assert output.habit.description == taxonomy_correction_text("F06")
+
+
+def test_run_batch_analysis_habit_counts_f03_merged_findings() -> None:
+    """The habit runs over the batch's *final* findings, F03's merge included."""
+
+    def f03_findings(frames):
+        return {f.frame_id: Finding(taxonomy_id="F03", description="safety copy") for f in frames}
+
+    lookup = _lookup({"F03": f03_findings, "F07": lambda frame: None})
+    frames = [_frame("00_a"), _frame("01_b")]
+
+    output, _runs = analyze_batch.run_batch_analysis(frames, detector_lookup=lookup, ids=["F07"])
+
+    assert output.habit is not None
+    assert output.habit.taxonomy_id == "F03"
 
 
 # --- run_batch_analysis(): F03's batch-level pass (item 8) -----------------
@@ -238,7 +267,7 @@ def test_render_report_includes_per_frame_sections_and_totals() -> None:
     assert "### 00_a:" in body
     assert "### 01_b:" in body
     assert "- F06 [detected] — edge intrusion" in body
-    assert "habit: None" in body
+    assert f"habit: F06 — {taxonomy_correction_text('F06')}" in body
     # Both frames carry the same F06 finding and tie on score -1; the tie
     # keeps batch order, so 00_a (first) is the pick.
     assert "1. 00_a (score -1)" in body

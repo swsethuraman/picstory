@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
-from picstory.ranking import build_pick, rank_frames, score_frame, share_list_lines
-from picstory.schema import Finding, FrameAnalysis, taxonomy_reinforcement_text
+from picstory.ranking import build_pick, compute_habit, rank_frames, score_frame, share_list_lines
+from picstory.schema import (
+    Finding,
+    FrameAnalysis,
+    taxonomy_correction_text,
+    taxonomy_reinforcement_text,
+)
 
 
 def _fa(frame_id: str, *taxonomy_ids: str) -> FrameAnalysis:
@@ -130,3 +135,44 @@ def test_share_list_lines_uses_verbatim_reinforcement_text() -> None:
 def test_share_list_lines_empty_when_no_s_item_reasons() -> None:
     pick = build_pick([_fa("a", "F06")])
     assert share_list_lines(pick) == []
+
+
+# --- compute_habit -------------------------------------------------------
+
+
+def test_compute_habit_empty_batch_is_none() -> None:
+    assert compute_habit([]) is None
+
+
+def test_compute_habit_none_when_no_f_or_s_finding_recurs() -> None:
+    assert compute_habit([_fa("a"), _fa("b", "unclassified"), _fa("c", "R01")]) is None
+
+
+def test_compute_habit_picks_most_recurrent_f_item_with_correction_text() -> None:
+    habit = compute_habit([_fa("a", "F06"), _fa("b", "F06"), _fa("c", "F07")])
+    assert habit.taxonomy_id == "F06"
+    assert habit.description == taxonomy_correction_text("F06")
+
+
+def test_compute_habit_picks_most_recurrent_s_item_with_reinforcement_text() -> None:
+    habit = compute_habit([_fa("a", "S01"), _fa("b", "S01"), _fa("c", "S02")])
+    assert habit.taxonomy_id == "S01"
+    assert habit.description == taxonomy_reinforcement_text("S01")
+
+
+def test_compute_habit_counts_frames_not_raw_findings() -> None:
+    # F06 appears on 2 distinct frames, F07 on 1 - F06 wins even though a
+    # frame structurally carries at most one Finding per ID (no way to
+    # inflate a single frame's count for one ID).
+    habit = compute_habit([_fa("a", "F06"), _fa("b", "F06", "F07")])
+    assert habit.taxonomy_id == "F06"
+
+
+def test_compute_habit_ties_break_by_ascending_taxonomy_id() -> None:
+    habit = compute_habit([_fa("a", "F07"), _fa("b", "F06")])
+    assert habit.taxonomy_id == "F06"
+
+
+def test_compute_habit_ignores_unclassified_and_r_items() -> None:
+    habit = compute_habit([_fa("a", "F06", "unclassified", "R01")])
+    assert habit.taxonomy_id == "F06"

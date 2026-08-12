@@ -20,6 +20,7 @@ from picstory.schema import (
     taxonomy_correction_text,
     taxonomy_detection_text,
     taxonomy_ids,
+    taxonomy_ids_with_subpattern,
     taxonomy_reinforcement_text,
 )
 
@@ -34,7 +35,7 @@ def test_taxonomy_ids_matches_frozen_count() -> None:
 
 def test_finding_classified_needs_no_description() -> None:
     f = Finding(taxonomy_id="F06")
-    assert f.to_dict() == {"taxonomy_id": "F06", "description": None}
+    assert f.to_dict() == {"taxonomy_id": "F06", "description": None, "sub_pattern": None}
 
 
 def test_finding_unclassified_requires_description() -> None:
@@ -52,6 +53,40 @@ def test_finding_unclassified_with_description_ok() -> None:
 def test_finding_rejects_unknown_id() -> None:
     with pytest.raises(SchemaError):
         Finding(taxonomy_id="F99")
+
+
+def test_taxonomy_ids_with_subpattern_parses_f06_profile_note() -> None:
+    # TAXONOMY.md v1.1: F06 is the only item with a "- **Profile note:**"
+    # bullet ("Directional sub-patterns ... are per-user traits tracked by
+    # the profile, not separate taxonomy items"). Parsed, not hardcoded -
+    # same single-source-of-truth reasoning as taxonomy_detection_text.
+    assert taxonomy_ids_with_subpattern() == frozenset({"F06"})
+
+
+def test_finding_sub_pattern_allowed_on_documented_id() -> None:
+    f = Finding(taxonomy_id="F06", description="stranger's shoulder", sub_pattern="right")
+    assert f.sub_pattern == "right"
+    assert f.to_dict() == {"taxonomy_id": "F06", "description": "stranger's shoulder", "sub_pattern": "right"}
+
+
+def test_finding_sub_pattern_rejected_on_undocumented_id() -> None:
+    # F01 has no TAXONOMY.md Profile note - only F06 does.
+    with pytest.raises(SchemaError):
+        Finding(taxonomy_id="F01", sub_pattern="right")
+
+
+def test_finding_sub_pattern_rejects_blank_string() -> None:
+    with pytest.raises(SchemaError):
+        Finding(taxonomy_id="F06", sub_pattern="   ")
+
+
+def test_finding_sub_pattern_defaults_to_none() -> None:
+    assert Finding(taxonomy_id="F06").sub_pattern is None
+
+
+def test_finding_from_dict_roundtrips_sub_pattern() -> None:
+    f = Finding.from_dict({"taxonomy_id": "F06", "description": "x", "sub_pattern": "left"})
+    assert f.sub_pattern == "left"
 
 
 def test_pick_reasons_must_be_s_items() -> None:

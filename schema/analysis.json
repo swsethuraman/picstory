@@ -58,6 +58,10 @@
         "description": {
           "type": ["string", "null"],
           "description": "Required (non-empty) when taxonomy_id is 'unclassified'; optional evidence/context otherwise."
+        },
+        "sub_pattern": {
+          "type": ["string", "null"],
+          "description": "Profile-layer detail (e.g. which edge for F06). Only valid on IDs TAXONOMY.md documents with a '- **Profile note:**' bullet - see src/picstory/schema.py's taxonomy_ids_with_subpattern()."
         }
       }
     },

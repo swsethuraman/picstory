@@ -41,6 +41,22 @@ from __future__ import annotations
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _isolate_profile_store(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every test gets its own `PICSTORY_PROFILE_PATH` (QUEUE.md item 12).
+
+    `profile.default_profile_path()` falls back to `~/.picstory/profile.json`
+    when the env var is unset - without this, `scripts/analyze_batch.py`'s
+    `main()` smoke tests (which exercise the real profile load/record/save
+    path, not an injected fake - same "test production wiring" reasoning as
+    the live-call fixture above) would read and write whatever real profile
+    file exists on the machine running the suite. Autouse + session-wide, the
+    same backstop shape as `_block_live_anthropic_calls`, so no future test
+    file has to remember to set this itself.
+    """
+    monkeypatch.setenv("PICSTORY_PROFILE_PATH", str(tmp_path / "profile.json"))
+
+
 class _BlockedMessages:
     def create(self, *args, **kwargs):
         raise RuntimeError(

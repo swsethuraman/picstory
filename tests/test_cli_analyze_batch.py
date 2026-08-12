@@ -1,4 +1,5 @@
-"""Behavior tests for scripts/analyze_batch.py (QUEUE.md Stage 2, items 7-8).
+"""Behavior tests for scripts/analyze_batch.py (QUEUE.md Stage 2, items 7-8,
+and Stage 3 item 11's CMP wiring).
 
 Same import-shim and detector-injection pattern as test_cli_analyze.py:
 `analyze_batch.py` lives under scripts/, and `run_batch_analysis` takes a
@@ -8,10 +9,23 @@ real batch-level grouping is a pure local computation (no network), so its
 own behavior is tested directly in test_f03_safety_copies.py; here it is
 mostly stubbed to `{}` (no findings) so tests that only care about the
 per-frame sweep aren't coupled to F03's actual grouping decisions.
+
+`_frame()` gives every frame a distinct EXIF `FocalLength`, which is enough
+on its own to break `detectors.f03.group_near_duplicates`'s pairwise check
+(see f03.py: a focal-length mismatch between two frames blocks a match
+outright, regardless of pixel content) - `run_batch_analysis` calls that
+*real* grouping function directly to find CMP's near-duplicate groups
+(item 11), independent of the `detector_lookup` fake above, so without this
+the identical all-zero pixel frames these tests already use would silently
+group and exercise `cmp_compare`'s real default (`picstory.cmp.compare_group`,
+a live API call) in every test below that doesn't otherwise care about CMP.
+Tests that *do* want a near-duplicate group construct frames with matching
+FocalLength explicitly (see the CMP section).
 """
 
 from __future__ import annotations
 
+import itertools
 import sys
 from pathlib import Path
 
@@ -22,13 +36,18 @@ import analyze_batch  # noqa: E402
 from picstory.batch import MIN_BATCH_SIZE, load_batch  # noqa: E402
 from picstory.detectors.base import DetectorNotImplemented  # noqa: E402
 from picstory.frame import Frame  # noqa: E402
-from picstory.schema import Finding, taxonomy_correction_text  # noqa: E402
+from picstory.schema import Comparison, Finding, taxonomy_correction_text  # noqa: E402
+
+_focal_lengths = itertools.count(1)
 
 
-def _frame(frame_id: str) -> Frame:
+def _frame(frame_id: str, *, focal_length: float | None = None) -> Frame:
     import numpy as np
 
-    return Frame(frame_id=frame_id, path=Path("."), rgb=np.zeros((4, 4, 3), dtype="uint8"), exif={})
+    if focal_length is None:
+        focal_length = float(next(_focal_lengths)) * 10.0
+    exif = {} if focal_length is None else {"FocalLength": focal_length}
+    return Frame(frame_id=frame_id, path=Path("."), rgb=np.zeros((4, 4, 3), dtype="uint8"), exif=exif)
 
 
 def _no_f03_findings(frames):
@@ -38,6 +57,13 @@ def _no_f03_findings(frames):
 def _lookup(table: dict[str, object]):
     table = {"F03": _no_f03_findings, **table}
     return lambda taxonomy_id: table[taxonomy_id]
+
+
+def _no_comparisons(frames):
+    raise AssertionError(
+        "cmp_compare should not be called - this test's frames are not near-duplicates "
+        "(see _frame()'s distinct-FocalLength docstring note)"
+    )
 
 
 # --- run_batch_analysis(): reuses analyze.run_analysis per frame ----------
@@ -53,7 +79,7 @@ def test_run_batch_analysis_aggregates_one_frame_analysis_per_frame() -> None:
     lookup = _lookup({"F06": detected, "F07": clean})
     frames = [_frame("00_a"), _frame("01_b"), _frame("02_c")]
 
-    output, runs_by_frame = analyze_batch.run_batch_analysis(
+    output, runs_by_frame, _comparison_runs = analyze_batch.run_batch_analysis(
         frames, detector_lookup=lookup, ids=["F06", "F07"]
     )
 
@@ -73,7 +99,7 @@ def test_run_batch_analysis_findings_stay_scoped_to_their_own_frame() -> None:
     lookup = _lookup({"F06": detected})
     frames = [_frame("00_a"), _frame("01_b"), _frame("02_c")]
 
-    output, _runs = analyze_batch.run_batch_analysis(frames, detector_lookup=lookup, ids=["F06"])
+    output, _runs, _comparison_runs = analyze_batch.run_batch_analysis(frames, detector_lookup=lookup, ids=["F06"])
 
     by_id = {fa.frame_id: fa for fa in output.frames}
     assert by_id["00_a"].findings == []
@@ -84,7 +110,7 @@ def test_run_batch_analysis_findings_stay_scoped_to_their_own_frame() -> None:
 def test_run_batch_analysis_habit_none_when_nothing_recurs() -> None:
     """A batch with zero F/S findings has nothing to name a habit from."""
     lookup = _lookup({"F07": lambda frame: None})
-    output, _runs = analyze_batch.run_batch_analysis(
+    output, _runs, _comparison_runs = analyze_batch.run_batch_analysis(
         [_frame("00_a")], detector_lookup=lookup, ids=["F07"]
     )
     assert output.habit is None
@@ -101,7 +127,7 @@ def test_run_batch_analysis_habit_is_most_recurrent_f_or_s_item() -> None:
     lookup = _lookup({"F06": detected, "F07": lambda frame: None})
     frames = [_frame("00_a"), _frame("01_b"), _frame("02_c")]
 
-    output, _runs = analyze_batch.run_batch_analysis(frames, detector_lookup=lookup, ids=["F06", "F07"])
+    output, _runs, _comparison_runs = analyze_batch.run_batch_analysis(frames, detector_lookup=lookup, ids=["F06", "F07"])
 
     assert output.habit is not None
     assert output.habit.taxonomy_id == "F06"
@@ -117,7 +143,7 @@ def test_run_batch_analysis_habit_counts_f03_merged_findings() -> None:
     lookup = _lookup({"F03": f03_findings, "F07": lambda frame: None})
     frames = [_frame("00_a"), _frame("01_b")]
 
-    output, _runs = analyze_batch.run_batch_analysis(frames, detector_lookup=lookup, ids=["F07"])
+    output, _runs, _comparison_runs = analyze_batch.run_batch_analysis(frames, detector_lookup=lookup, ids=["F07"])
 
     assert output.habit is not None
     assert output.habit.taxonomy_id == "F03"
@@ -135,7 +161,7 @@ def test_run_batch_analysis_merges_f03_findings_into_flagged_frames_only() -> No
     lookup = _lookup({"F07": lambda frame: None, "F03": f03_findings})
     frames = [_frame("00_a"), _frame("01_b"), _frame("02_c")]
 
-    output, runs_by_frame = analyze_batch.run_batch_analysis(
+    output, runs_by_frame, _comparison_runs = analyze_batch.run_batch_analysis(
         frames, detector_lookup=lookup, ids=["F07"]
     )
 
@@ -160,7 +186,7 @@ def test_run_batch_analysis_classifies_f03_stub_like_a_per_frame_stub() -> None:
     lookup = _lookup({"F07": lambda frame: None, "F03": f03_stub})
     frames = [_frame("00_a"), _frame("01_b")]
 
-    _output, runs_by_frame = analyze_batch.run_batch_analysis(
+    _output, runs_by_frame, _comparison_runs = analyze_batch.run_batch_analysis(
         frames, detector_lookup=lookup, ids=["F07"]
     )
 
@@ -176,7 +202,7 @@ def test_run_batch_analysis_classifies_f03_error_like_a_per_frame_error() -> Non
     lookup = _lookup({"F07": lambda frame: None, "F03": f03_broken})
     frames = [_frame("00_a"), _frame("01_b")]
 
-    _output, runs_by_frame = analyze_batch.run_batch_analysis(
+    _output, runs_by_frame, _comparison_runs = analyze_batch.run_batch_analysis(
         frames, detector_lookup=lookup, ids=["F07"]
     )
 
@@ -208,7 +234,7 @@ def test_run_batch_analysis_picks_the_highest_scoring_frame() -> None:
     )
     frames = [_frame("00_a"), _frame("01_b"), _frame("02_c")]
 
-    output, _runs = analyze_batch.run_batch_analysis(
+    output, _runs, _comparison_runs = analyze_batch.run_batch_analysis(
         frames, detector_lookup=lookup, ids=["S01", "F06", "F07"]
     )
 
@@ -226,7 +252,7 @@ def test_run_batch_analysis_pick_disqualifiers_include_the_pick_s_own_f03_findin
     lookup = _lookup({"F07": lambda frame: None, "F03": f03_findings})
     frames = [_frame("00_a"), _frame("01_b")]
 
-    output, _runs = analyze_batch.run_batch_analysis(
+    output, _runs, _comparison_runs = analyze_batch.run_batch_analysis(
         frames, detector_lookup=lookup, ids=["F07"]
     )
 
@@ -239,11 +265,76 @@ def test_run_batch_analysis_pick_ties_keep_batch_order() -> None:
     lookup = _lookup({"F07": lambda frame: None})
     frames = [_frame("00_a"), _frame("01_b"), _frame("02_c")]
 
-    output, _runs = analyze_batch.run_batch_analysis(
+    output, _runs, _comparison_runs = analyze_batch.run_batch_analysis(
         frames, detector_lookup=lookup, ids=["F07"]
     )
 
     assert output.pick.frame_id == "00_a"
+
+
+# --- run_batch_analysis(): CMP over near-duplicate groups (item 11) -------
+
+
+def test_run_batch_analysis_no_comparisons_when_no_near_duplicates() -> None:
+    """Distinct-FocalLength frames (the module default) never group - cmp_compare unused."""
+    lookup = _lookup({"F07": lambda frame: None})
+    frames = [_frame("00_a"), _frame("01_b"), _frame("02_c")]
+
+    output, _runs, comparison_runs = analyze_batch.run_batch_analysis(
+        frames, detector_lookup=lookup, ids=["F07"], cmp_compare=_no_comparisons
+    )
+
+    assert output.comparisons == []
+    assert comparison_runs == []
+
+
+def test_run_batch_analysis_compares_a_near_duplicate_group() -> None:
+    lookup = _lookup({"F07": lambda frame: None})
+    frames = [
+        _frame("00_a", focal_length=24.0),
+        _frame("01_b", focal_length=24.0),
+        _frame("02_c"),  # distinct focal length - not part of the group
+    ]
+
+    def fake_compare(group_frames):
+        assert [f.frame_id for f in group_frames] == ["00_a", "01_b"]
+        return Comparison(
+            group=[f.frame_id for f in group_frames],
+            winner_frame_id="01_b",
+            subject_placement="00_a centers the tower; 01_b drifts left of center",
+            edge_amputations="00_a clips the flag at the top edge; 01_b doesn't",
+            incidental_distractions="a cyclist enters frame in 01_b",
+            tiebreaker="the cyclist mid-pedal reads as a moment, not a record shot",
+        )
+
+    output, _runs, comparison_runs = analyze_batch.run_batch_analysis(
+        frames, detector_lookup=lookup, ids=["F07"], cmp_compare=fake_compare
+    )
+
+    assert len(output.comparisons) == 1
+    assert output.comparisons[0].winner_frame_id == "01_b"
+    assert output.comparisons[0].group == ["00_a", "01_b"]
+    assert len(comparison_runs) == 1
+    assert comparison_runs[0].status == "compared"
+    assert comparison_runs[0].group == ["00_a", "01_b"]
+
+
+def test_run_batch_analysis_comparison_failure_is_logged_not_fatal() -> None:
+    """CLAUDE.md's spending rule: a blocked/failed call is logged and the run moves on."""
+    lookup = _lookup({"F07": lambda frame: None})
+    frames = [_frame("00_a", focal_length=24.0), _frame("01_b", focal_length=24.0)]
+
+    def broken_compare(group_frames):
+        raise RuntimeError("spend cap hit")
+
+    output, _runs, comparison_runs = analyze_batch.run_batch_analysis(
+        frames, detector_lookup=lookup, ids=["F07"], cmp_compare=broken_compare
+    )
+
+    assert output.comparisons == []  # no crash, no partial/fabricated result
+    assert len(comparison_runs) == 1
+    assert comparison_runs[0].status == "error"
+    assert "spend cap hit" in comparison_runs[0].detail
 
 
 # --- render_report(): per-frame sections and aggregate counts -------------
@@ -255,7 +346,7 @@ def test_render_report_includes_per_frame_sections_and_totals() -> None:
 
     lookup = _lookup({"F06": detected, "F07": lambda frame: None})
     frames = [_frame("00_a"), _frame("01_b")]
-    output, runs_by_frame = analyze_batch.run_batch_analysis(
+    output, runs_by_frame, _comparison_runs = analyze_batch.run_batch_analysis(
         frames, detector_lookup=lookup, ids=["F06", "F07"]
     )
     body = analyze_batch.render_report(
@@ -274,6 +365,50 @@ def test_render_report_includes_per_frame_sections_and_totals() -> None:
     assert "2. 01_b (score -1)" in body
     assert "frame_id: 00_a" in body
     assert "disqualifiers (F-items still present): ['F06']" in body
+    assert "(no near-duplicate groups in this batch)" in body
+
+
+def test_render_report_includes_comparison_section() -> None:
+    lookup = _lookup({"F07": lambda frame: None})
+    frames = [_frame("00_a", focal_length=24.0), _frame("01_b", focal_length=24.0)]
+
+    def fake_compare(group_frames):
+        return Comparison(
+            group=["00_a", "01_b"],
+            winner_frame_id="01_b",
+            subject_placement="centered vs. off-center",
+            edge_amputations="flag clipped in 00_a",
+            incidental_distractions="cyclist in 01_b",
+        )
+
+    output, runs_by_frame, comparison_runs = analyze_batch.run_batch_analysis(
+        frames, detector_lookup=lookup, ids=["F07"], cmp_compare=fake_compare
+    )
+    body = analyze_batch.render_report(
+        [Path("a.jpg"), Path("b.jpg")], output, runs_by_frame, comparison_runs
+    )
+
+    assert "['00_a', '01_b'] → winner '01_b'" in body
+    assert "subject placement: centered vs. off-center" in body
+    assert "edge amputations: flag clipped in 00_a" in body
+    assert "incidental distractions: cyclist in 01_b" in body
+
+
+def test_render_report_includes_comparison_error() -> None:
+    lookup = _lookup({"F07": lambda frame: None})
+    frames = [_frame("00_a", focal_length=24.0), _frame("01_b", focal_length=24.0)]
+
+    def broken_compare(group_frames):
+        raise RuntimeError("spend cap hit")
+
+    output, runs_by_frame, comparison_runs = analyze_batch.run_batch_analysis(
+        frames, detector_lookup=lookup, ids=["F07"], cmp_compare=broken_compare
+    )
+    body = analyze_batch.render_report(
+        [Path("a.jpg"), Path("b.jpg")], output, runs_by_frame, comparison_runs
+    )
+
+    assert "error: RuntimeError: spend cap hit" in body
 
 
 # --- main(): end-to-end through real (tiny, on-disk) images ---------------

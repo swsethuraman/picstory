@@ -1,120 +1,176 @@
-# REVIEW — critic-003, 2026-08-11
+# REVIEW — critic-004, 2026-08-12
 
-Scope: diff from `58aec58` (critic-002, HEAD at the time `1a78643`) through
-`7136ac1` (HEAD now) — builder-007 (batch input, `564c191`), builder-008 (F03
-near-duplicate grouping, `2fb84bf`), builder-009 (ranking + shortlist,
-`a0f6f75`), and builder-010 (session habit, `09e8392`). QUEUE.md Stage 2 in
-full (items 7–10).
+Scope: diff from `f0f11f0` (critic-003) through `db37fe8` (HEAD) — builder-011
+(CMP, `b9f6769`), builder-012 (the profile, `fa421af`), builder-013 (R01,
+`0eb442f`), builder-014 (S03, `c2d7d24`), builder-015 (no code changes). All
+of QUEUE.md Stage 3 (item 11), Stage 4 (item 12), and the two agent-proposed
+items (13, 14).
 
-Per CLAUDE.md's CRITIC instruction: for each taxonomy ID, does the detector
-implement the actual described failure, or a plausible substitute?
+Per CLAUDE.md's CRITIC instruction: for each taxonomy ID / output row, does
+the implementation match the actual described behavior, or a plausible
+substitute?
 
 ## Headline finding
 
-**No plausible-substitute pattern found.** This diff lands one real
-taxonomy-ID detector (F03) plus the output-assembly logic (ranking, pick,
-share list, habit) that TAXONOMY.md's own output-mapping table specifies.
-Checked line-by-line against that table and against F03's Detection text.
+**No plausible-substitute pattern found in this diff.** Four output rows
+landed (CMP, the profile, R01, S03) and all four were checked line-by-line
+against their TAXONOMY.md text; each is a real, disclosed implementation of
+what its text actually says, not an easier stand-in.
 
-## F03 · Safety copies
+## CMP · Three-frame comparison rubric
 
-| ID | Kind | Verdict |
-|---|---|---|
-| F03 | batch-level (local) | Matches, with one disclosed proxy limitation. Detection text: "2-5 consecutive frames of the same subject with no change in position, focal length, or angle." The implementation checks all three named signals independently — EXIF `FocalLength` for the literal metadata clause, EXIF timestamp closeness for "consecutive," and a whole-frame difference-hash for "no change in position or angle." The hash is a disclosed proxy (no camera-pose data exists to check position/angle directly), same disclosure pattern already accepted for F09's center-third subject proxy — not a hidden substitute. `group_near_duplicates`'s threshold (6/64 bits) is empirically grounded in the module's own comment and exercised by `tests/test_f03_safety_copies.py`'s discriminating cases: identical frames score 0, sigma-8-noise frames score ~2, a subject moved 10% of frame width scores 8. Tests assert the actual discriminating cases (moved-subject frame breaking a run, focal-length change breaking a run, missing EXIF *not* blocking a match, timestamp gap breaking a run) rather than only the happy path. The "2-5" ceiling is correctly read as descriptive (TAXONOMY.md's own examples give "x3," "x5") rather than a hard cap, consistent with critic-002's precedent for F02's "typically." |
+| Item | Verdict |
+|---|---|
+| CMP | Matches. `cmp.py`'s prompt embeds `schema.cmp_rubric_text()` — the whole §CMP section, parsed verbatim, not paraphrased — satisfying the API-discipline rule's "embeds the item's Detection text verbatim" for a section that (correctly noted in the module docstring) has no single `- **Detection:**` bullet to extract instead. The tool schema's three axes (`subject_placement`, `edge_amputations`, `incidental_distractions`) are exactly TAXONOMY.md's three named axes, in the same order, all required; `tiebreaker` is optional and separately worded to fire "only if the axes alone do not settle it," matching §CMP's own tiebreaker framing. `winning_frame_id` is a JSON Schema `enum` of the actual frame IDs sent — the model is structurally prevented from naming a frame outside the group, not just asked nicely to. `schema.Comparison` deliberately carries no F/S taxonomy ID field, matching the output-mapping table's "The CMP rubric, exclusively." |
 
-One minor, non-blocking proxy caveat worth naming for whoever next tunes
-F03: the difference-hash check is pairwise-consecutive (frame *i* vs. frame
-*i+1*), so a slow pan across many frames — each adjacent pair within
-threshold, but frame 1 clearly different from frame 5 — could chain into one
-over-long "run" the way transitive-similarity chaining always can. Nothing
-in the source material (travel bursts of a static subject) obviously
-triggers this, and it's the same class of disclosed-proxy limitation as
-F09's center-third approximation — flagging for awareness, not as an
-undisclosed substitute.
+Verified against the one genuine recorded fixture
+(`tests/fixtures/cmp/wide_vs_tight_with_walker.json`): the live model's
+`winning_frame_id` is `"tight"` and its `tiebreaker` text names the added
+walker figure as the deciding story element — an actual exercise of §CMP's
+tiebreaker clause by a real call, not a hand-picked value asserting the
+rubric works. `tests/test_cmp.py` replays this fixture through
+`parse_tool_use_response` (`test_parse_tool_use_response_replays_genuine_recorded_api_call`)
+and separately asserts the prompt contains `cmp_rubric_text()` verbatim.
 
-## Ranking, pick, share list, habit (TAXONOMY.md's output-mapping table)
+One thing worth naming for whoever next runs this against a real large
+batch, carried forward from builder-011's own worklog rather than
+independently found here: `compare_group` sends a near-duplicate group's
+*entire* run in one call, uncapped — F03's own docstring says its runs
+aren't capped at 5 despite TAXONOMY.md's "2-5" examples being descriptive
+only. Not exercised in this diff (no large synthetic run was pushed through
+`main()`), not a taxonomy-match defect, just an unexercised edge.
 
-This is not a per-ID detector, but CLAUDE.md's "design constraint that
-governs everything" makes the output-mapping table itself something CRITIC
-should check the implementation against — and builder-009/builder-010 both
-explicitly flagged one reading in their worklogs for CRITIC to verify
-rather than asserting it settled themselves.
+## The running profile
 
-- **`Pick.disqualifiers` names the winner's own remaining F-items, not an
-  exclusion filter.** Verified against `schema.py`'s `Pick` dataclass
-  (Stage 1, already CRITIC-cleared in critic-001/002): its docstring reads
-  "F-item disqualifiers **weighed**" — not "excluded" or "eliminated." A
-  frame can win the pick with F-item findings still attached, disclosed
-  rather than hidden. `ranking.score_frame`'s `count(S) - count(F)` formula
-  is the literal arithmetic reading of TAXONOMY.md's own sentence
-  ("Strengths... as the... one-liners; failure modes as disqualifiers") —
-  there is genuinely no separate scoring rubric elsewhere in TAXONOMY.md to
-  implement instead. This reading is consistent with the pre-existing
-  schema, not a new interpretation invented to dodge the taxonomy's intent.
-  Verdict: matches, on the only textually-grounded reading available.
-- **Share-list one-liners** are each S-item ID paired with its
-  Reinforcement text, parsed verbatim from TAXONOMY.md via the new
-  `schema.taxonomy_reinforcement_text` (mirrors `taxonomy_detection_text`'s
-  established verbatim-source pattern). `tests/test_schema.py` checks two
-  S-items' Reinforcement text against hand-transcribed strings from
-  TAXONOMY.md directly (verified by reading TAXONOMY.md myself: S01 and S04
-  match exactly) — not a paraphrase that could drift.
-- **The habit** (`ranking.compute_habit`) is "whichever F- or S-item recurs
-  most in the batch," counted per distinct frame carrying the ID, with an
-  explicit, tested, documented ascending-ID tie-break TAXONOMY.md itself
-  doesn't specify. Its coaching text is Correction (new
-  `schema.taxonomy_correction_text`, F-items) or Reinforcement (S-items) —
-  the symmetric read of the output-mapping table's "reinforcement counts as
-  coaching" line. Verified F01 and F06 Correction text against TAXONOMY.md
-  directly; both match verbatim. R01 and `unclassified` are correctly
-  excluded (neither has a polarity or coaching text in TAXONOMY.md).
+| Item | Verdict |
+|---|---|
+| Running profile | Matches. TAXONOMY.md's output-mapping table: "Per-user recurrence of F/S items and their sub-patterns (e.g. *which* edge the user neglects)." `profile.py`'s `IdRecurrence`/`record_session` implement exactly this — per-ID session/frame counts, `sub_patterns` tallied only for IDs `schema.taxonomy_ids_with_subpattern()` names (today `{"F06"}`, parsed from F06's own "Profile note" bullet, not hardcoded). R01 and `unclassified` correctly excluded, same reasoning `ranking.py` already applies. |
+| F06 sub-pattern | Matches, and matches well. The `edge` value is asked for **inside the same structured tool call** as F06's detected/rationale verdict (`_vision.SubPatternSpec`, enum-constrained to `left/right/top/bottom/multiple`), not regex-scraped out of free-text rationale afterward. That second approach is exactly the kind of plausible substitute PREDICTION.md would flag and CLAUDE.md's API-discipline rule exists to prevent, and it was avoided. The enum vocabulary itself reads directly off F06's own text (`right-third`/`left-edge` named in the Profile note; "sweep all four edges" in Correction motivating top/bottom; `multiple` for the genuine multi-edge case) — not invented. `Finding.__post_init__` enforces that only IDs with a documented Profile note may carry a `sub_pattern` at all, so this can't silently spread to other IDs without a TAXONOMY.md amendment. |
 
-No vocabulary violation anywhere in this diff: every disqualifier, reason,
-and habit is a taxonomy ID or its verbatim TAXONOMY.md text, never invented
-language.
+Verified two genuine recorded fixtures
+(`f06_landmark_alone.json`: `detected=false`;
+`f06_edge_intrusion_right.json`: `detected=true, edge="right"`) replay
+correctly through `parse_tool_use_response` with `EDGE_SUB_PATTERN` wired
+in — the live model's own verdict, not an asserted one. The other eight
+judgment-dependent detectors' fixtures remain hand-authored (per D-006, a
+prior sandboxed session had no key); this diff is honest about that split
+in `test_vision_detectors.py`'s own module docstring rather than presenting
+the F06/CMP recordings as if they covered everything.
 
-## Worth flagging, not a taxonomy-match defect
+builder-012's worklog flagged its own read of "recurrence" (one `sessions`
+increment per ID per batch run, regardless of how many frames carry it) as
+worth CRITIC checking. TAXONOMY.md's output-mapping table doesn't define
+"recurrence" more precisely than the phrase itself, and this reading is the
+direct cross-session extension of `ranking.compute_habit`'s existing
+within-session reading — consistent, not a new interpretation invented for
+convenience. No objection.
 
-**builder-010's worklog reports the wrong test count.** Its "Test count"
-section states "166 collected: 165 passed, 1 expected fail." Running the
-suite directly against HEAD (`uv run pytest -q`, no code differs between
-`09e8392` and HEAD's merge commit) collects **159** tests: 158 passed, 1
-expected fail (`test_every_id_has_detector_and_named_test`,
-`missing_test = [F14, R01, S03]` — same as every session since builder-008,
-correctly still open). The actual number reconciles cleanly with the diff
-(147 after builder-009 + 12 new test functions in builder-010's own commit
-= 159); the suite itself is intact and nothing is missing or silently
-dropped. This looks like a plain transcription error in the worklog rather
-than any code or coverage problem, but CLAUDE.md requires every worklog to
-state "test count" and a wrong number undermines the one artifact future
-sessions use to sanity-check "did the suite grow the way this session
-claims" without re-running it themselves. Flagging so the next BUILDER
-session double-checks its own reported count against a direct run before
-committing the worklog.
+## R01 · Haze rule
+
+| Item | Verdict |
+|---|---|
+| R01 | Matches. §R's Trigger text ("Hazy / low-contrast conditions (detected via F12 findings in the batch)") is checked exactly as written — `any(finding.taxonomy_id == "F12" ...)` over the batch's already-computed findings, nothing re-derived from pixels. `Rule` is correctly a distinct dataclass from `Finding`, matching §R's explicit "different object type for the classifier" framing, and fires once per batch (forward-looking session advice), not once per triggering frame. `advice` is `schema.taxonomy_rule_text("R01")` — the Rule bullet parsed verbatim, same single-source-of-truth pattern as Detection/Correction/Reinforcement text elsewhere. |
+
+`r01.py`'s previously-flagged stale citation ("real detection logic ...
+lands in QUEUE.md item 3", open since critic-002) is gone — the whole
+module was replaced by this diff, confirmed by reading the file directly.
+Closing that note.
+
+## S03 · Tight framing
+
+| Item | Verdict |
+|---|---|
+| S03 | Matches D-007's ruling, which is the operative spec here (D-007 modified TAXONOMY.md's own "batch-mates" reading into a scoped, implementable form; this diff is checked against that ruling's text, not re-litigated). |
+
+D-007's ruling named two required properties for the grouping and both are
+met, checked directly in `subject_clusters.py`:
+- **Looser threshold than F03's.** `HASH_DISTANCE_THRESHOLD = 15` vs. F03's
+  `6` — confirmed by reading `f03.py`'s own constant, not taken on faith
+  from the docstring's claim.
+- **No focal-length/timestamp gate.** `group_subject_clusters` computes
+  pairwise Hamming distance from `difference_hash` alone; no EXIF field is
+  read anywhere in the module. F03's `group_near_duplicates`, by contrast,
+  does gate on both — confirmed by reading both functions side by side.
+- **Non-adjacent frames can cluster.** The function compares every pair
+  (`for i in range(n): for j in range(i+1, n)`), not just consecutive
+  frames — genuinely different from F03's adjacency-only scan, which is the
+  distinction D-007's ruling required ("batch-mates" isn't an adjacency
+  relationship the way a burst is).
+
+`s03.py`'s `_framing_tightness` (via `_imaging.sharp_area_fraction`, new
+this diff) is a disclosed proxy for "tightest frame of a subject" — no
+subject/face segmentation exists locally, so it leans on sharp-area share
+as a stand-in, the same disclosure standard already accepted for F09's
+center-third proxy in critic-002 and F03's dHash-as-pose proxy in
+critic-003. Not a hidden substitute: the module docstring states the
+proxy and its rationale plainly, and `_imaging.py`'s own docstring names
+where it breaks down (subject nearly filling the frame, no flat-background
+baseline left).
+
+One transitivity caveat is disclosed in `subject_clusters.py`'s own
+docstring (any-pair union-find chaining could pull an unrelated frame into
+a cluster through an intermediate one) — the same class of caveat
+critic-003 flagged for F03's pairwise-consecutive version, one layer more
+exposed here since non-adjacency widens the chaining surface. Correctly
+self-flagged rather than left implicit; nothing in this session's own test
+fixture triggers it, and it's a tuning note, not a substitute-detection
+finding.
+
+## Testing infrastructure: the live-call leak (worth flagging, not a taxonomy defect, but real)
+
+builder-011 discovered that every `uv run pytest` since at least builder-007
+had been silently making live, spend-cap-metered calls to
+`api.anthropic.com` through `main()`'s end-to-end smoke tests, because this
+sandbox's `PICSTORY_VISION_KEY` actually works (unlike the no-key sandbox
+D-006 diagnosed) and those specific tests deliberately exercise the real,
+unfaked detector registry. This is a genuine violation of CLAUDE.md's
+explicit rule ("the test suite must run offline ... tests never make live
+calls") that predates this diff and went unnoticed by builder-007 through
+critic-003 — the ~180–200s per-run cost every one of those sessions
+reported and none diagnosed was this. No prior CRITIC session flagged it
+(checked all three prior REVIEW.mds for "offline"/"live"/"network" — no
+hits); this diff is the first to catch it.
+
+The fix (`tests/conftest.py`'s `_block_live_anthropic_calls`, autouse,
+session-wide) is correct and verified directly this session: ran the full
+suite with this sandbox's own working `PICSTORY_VISION_KEY` still set in
+the environment (confirmed present via `env`) and got 265 passed / 1
+expected fail in 3.4s — no network I/O, no 401 round-trip delay, consistent
+with the fixture patching `anthropic.Anthropic` itself rather than merely
+unsetting a key. The one open design question builder-011's own worklog
+raised (global client-patch backstop vs. per-test fake-injection
+discipline) is a testing-infrastructure judgment call, not a
+taxonomy question — the backstop is safer given the discovered real-spend
+cost of leaving it to per-test discipline, and it demonstrably does not
+interfere with the two tests that need the real `default_caller()` code
+path (they re-patch locally, verified by reading `test_vision_detectors.py`
+directly). No objection to the fix; flagging here only because it is a real
+finding about the diff, not a new one being raised.
 
 ## DECISIONS.md
 
-Not adding an entry this session. Open count unchanged at 0 (D-001–D-006
-all `RULED`). Nothing in this diff rises to "unimplementable item" — the
-F03 chain-transitivity note and the test-count discrepancy above are both
-disclosed/inspectable, not blocking ambiguities needing a human ruling.
+Not adding an entry this session. Open count unchanged at 0 (D-001–D-007
+all `RULED`). D-007's split ruling (S03 implemented per its modified-(a),
+F14 stands stubbed per its (c)) is followed exactly as written in this
+diff — checked directly against the ruling text above, not assumed.
 
-## Still open from critic-002, untouched by this diff
+## Still open from critic-002/critic-003, untouched by this diff
 
 - F09's center-third subject proxy (`src/picstory/detectors/f09.py`) —
-  still not touched.
-- `src/picstory/detectors/r01.py`'s stale citation ("real detection logic
-  ... lands in QUEUE.md item 3") — still wrong, still not touched. This is
-  now the third consecutive REVIEW.md to carry this note forward
-  untouched. Still not opening a DECISIONS.md entry (it's a one-line stale
-  comment, not an ambiguity needing a ruling), but the next session that
-  implements R01 should not trust this citation.
+  still not touched. Continues to be an accepted, disclosed proxy (same
+  standard applied to F03/S03 above), not a new finding.
+
+## Resolved by this diff
+
+- R01's stale QUEUE-item-3 citation (open since critic-002, carried through
+  critic-003) — gone, confirmed above.
 
 ## Test suite
 
-159 collected, 158 passed, 1 expected fail
-(`test_every_id_has_detector_and_named_test`, `missing_test = [F14, R01,
-S03]` — D-005 covers F14/S03; R01 has no scheduling decision yet). Verified
-by running the suite directly this session (`uv run pytest -q`, ~182s —
-consistent with prior sessions' reported vision-detector-no-network-call
-cost), not by trusting either worklog's stated number.
+266 collected: 265 passed, 1 expected fail
+(`test_every_id_has_detector_and_named_test`, `missing_test = [F14]` — the
+documented, intended end state of this guard per D-007's ruling, not an
+open gap). Verified by running the suite directly this session
+(`uv run pytest -q`, 3.4s, this sandbox's own `PICSTORY_VISION_KEY` present
+in the environment throughout — the fast, clean run is itself evidence
+`tests/conftest.py`'s live-call block above is working, not just claimed).

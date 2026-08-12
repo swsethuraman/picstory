@@ -41,6 +41,10 @@ _CMP_SECTION = re.compile(
     r"^## CMP — The three-frame comparison rubric\n\n(?P<text>.*?)\n\n---\n",
     re.MULTILINE | re.DOTALL,
 )
+_PROFILE_NOTE_LINE = re.compile(
+    r"^### (?P<id>[FSR]\d{2}) ·.*\n(?:^-.*\n)*?^- \*\*Profile note:\*\* (?P<text>.+)$",
+    re.MULTILINE,
+)
 
 
 class SchemaError(ValueError):
@@ -147,12 +151,37 @@ def cmp_rubric_text() -> str:
     return match.group("text").strip()
 
 
+@lru_cache(maxsize=1)
+def taxonomy_ids_with_subpattern() -> frozenset[str]:
+    """IDs TAXONOMY.md documents as having a profile-layer sub-pattern.
+
+    Single source of truth (same reasoning as `taxonomy_detection_text` etc.):
+    parsed from each item's `- **Profile note:**` bullet rather than
+    hardcoded, so a future TAXONOMY.md amendment adding another Profile note
+    is picked up without a code change. Today this is `{"F06"}` - its note
+    reads "Directional sub-patterns (e.g. a right-third or left-edge blind
+    spot) are per-user traits tracked by the profile, not separate taxonomy
+    items" (TAXONOMY.md's output-mapping table: "The running profile | Per-
+    user recurrence of F/S items and their sub-patterns (e.g. *which* edge
+    the user neglects)").
+    """
+    text = _TAXONOMY_MD.read_text(encoding="utf-8")
+    return frozenset(m.group("id") for m in _PROFILE_NOTE_LINE.finditer(text))
+
+
 @dataclass
 class Finding:
-    """One per-frame observation: a taxonomy ID, or `unclassified` + description."""
+    """One per-frame observation: a taxonomy ID, or `unclassified` + description.
+
+    `sub_pattern` is optional, profile-layer detail (TAXONOMY.md's "running
+    profile" row) - only valid on IDs with a documented Profile note
+    (`taxonomy_ids_with_subpattern()`); never a free-standing classification
+    of its own.
+    """
 
     taxonomy_id: str
     description: str | None = None
+    sub_pattern: str | None = None
 
     def __post_init__(self) -> None:
         valid = taxonomy_ids() | {UNCLASSIFIED}
@@ -165,13 +194,30 @@ class Finding:
             self.description and self.description.strip()
         ):
             raise SchemaError(f"{UNCLASSIFIED!r} findings require a non-empty description")
+        if self.sub_pattern is not None:
+            if not self.sub_pattern.strip():
+                raise SchemaError("Finding.sub_pattern, if set, must be non-empty")
+            allowed = taxonomy_ids_with_subpattern()
+            if self.taxonomy_id not in allowed:
+                raise SchemaError(
+                    f"taxonomy_id {self.taxonomy_id!r} has no TAXONOMY.md Profile note "
+                    f"documenting a sub-pattern; only {sorted(allowed)} may set sub_pattern"
+                )
 
     def to_dict(self) -> dict:
-        return {"taxonomy_id": self.taxonomy_id, "description": self.description}
+        return {
+            "taxonomy_id": self.taxonomy_id,
+            "description": self.description,
+            "sub_pattern": self.sub_pattern,
+        }
 
     @classmethod
     def from_dict(cls, data: dict) -> Finding:
-        return cls(taxonomy_id=data["taxonomy_id"], description=data.get("description"))
+        return cls(
+            taxonomy_id=data["taxonomy_id"],
+            description=data.get("description"),
+            sub_pattern=data.get("sub_pattern"),
+        )
 
 
 @dataclass

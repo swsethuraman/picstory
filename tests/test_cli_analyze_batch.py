@@ -36,6 +36,7 @@ import analyze_batch  # noqa: E402
 from picstory.batch import MIN_BATCH_SIZE, load_batch  # noqa: E402
 from picstory.detectors.base import DetectorNotImplemented  # noqa: E402
 from picstory.frame import Frame  # noqa: E402
+from picstory.profile import Profile, record_session  # noqa: E402
 from picstory.schema import Comparison, Finding, taxonomy_correction_text  # noqa: E402
 
 _focal_lengths = itertools.count(1)
@@ -411,6 +412,33 @@ def test_render_report_includes_comparison_error() -> None:
     assert "error: RuntimeError: spend cap hit" in body
 
 
+# --- render_report(): the Profile section (item 12) -----------------------
+
+
+def test_render_report_profile_section_reflects_the_updated_profile() -> None:
+    lookup = _lookup({"F06": lambda frame: Finding(taxonomy_id="F06", description="edge"), "F07": lambda frame: None})
+    frames = [_frame("00_a")]
+    output, runs_by_frame, _comparison_runs = analyze_batch.run_batch_analysis(
+        frames, detector_lookup=lookup, ids=["F06", "F07"]
+    )
+    updated_profile = record_session(Profile(), output.frames)
+
+    body = analyze_batch.render_report([Path("a.jpg")], output, runs_by_frame, updated_profile=updated_profile)
+
+    assert "## Profile (per-user recurrence across sessions, this session included)" in body
+    assert "sessions recorded: 1" in body
+    assert "F06: 1 session, 1 frame" in body
+
+
+def test_render_report_profile_section_absent_when_no_profile_given() -> None:
+    lookup = _lookup({"F07": lambda frame: None})
+    output, runs_by_frame, _comparison_runs = analyze_batch.run_batch_analysis(
+        [_frame("00_a")], detector_lookup=lookup, ids=["F07"]
+    )
+    body = analyze_batch.render_report([Path("a.jpg")], output, runs_by_frame)
+    assert "(not recorded)" in body
+
+
 # --- main(): end-to-end through real (tiny, on-disk) images ---------------
 
 
@@ -441,6 +469,37 @@ def test_main_writes_report_and_prints_at_most_three_lines(tmp_path, monkeypatch
     body = written[0].read_text(encoding="utf-8")
     for i in range(MIN_BATCH_SIZE):
         assert f"{i:02d}_clean{i}" in body
+
+
+def test_main_records_and_accumulates_the_profile_across_invocations(tmp_path, monkeypatch, capsys) -> None:
+    import numpy as np
+    from PIL import Image
+
+    def _photos(prefix: str) -> list[str]:
+        paths = []
+        for i in range(MIN_BATCH_SIZE):
+            photo = tmp_path / f"{prefix}{i}.jpg"
+            Image.fromarray(np.full((16, 16, 3), 128, dtype="uint8")).save(photo)
+            paths.append(str(photo))
+        return paths
+
+    import _report as report_module
+
+    monkeypatch.setattr(report_module, "REPORTS", tmp_path / "reports")
+    profile_path = tmp_path / "profile.json"
+
+    exit_code = analyze_batch.main(["--profile-path", str(profile_path), *_photos("a")])
+    assert exit_code == 0
+    assert profile_path.exists()
+    first = Profile.from_json(profile_path.read_text(encoding="utf-8"))
+    assert first.sessions_recorded == 1
+
+    capsys.readouterr()  # drain stdout between runs
+
+    exit_code = analyze_batch.main(["--profile-path", str(profile_path), *_photos("b")])
+    assert exit_code == 0
+    second = Profile.from_json(profile_path.read_text(encoding="utf-8"))
+    assert second.sessions_recorded == 2  # accumulated, not overwritten
 
 
 def test_main_reports_failure_for_a_batch_outside_size_range(tmp_path, monkeypatch, capsys) -> None:

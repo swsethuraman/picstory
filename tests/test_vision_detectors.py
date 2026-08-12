@@ -14,7 +14,7 @@ Anthropic Messages API tool_use structure - a gap D-006 tracked, not a
 substitute (`_vision.parse_tool_use_response`, the real parsing code, was
 still genuinely exercised; what was missing was evidence a live call
 actually comes back in the shape the code expects). D-006's ruling
-provisioned `PICSTORY_VISION_KEY` for agent sessions; this session used it
+provisioned `PICSTORY_VISION_KEY` for agent sessions; a prior session used it
 to make 4 live calls (`scripts/record_vision_fixtures.py`) and recorded the
 raw responses under `tests/fixtures/vision/`. The
 "...replays_genuine_recorded_api_call" tests below replay those recordings
@@ -24,6 +24,13 @@ tests only (missing tool_use block, wrong ID, missing field, empty
 rationale): a real call under this module's schema-enforced `tool_choice`
 cannot produce a malformed response, so those specific cases have no live
 equivalent to record and stay intentionally hand-authored.
+
+QUEUE.md item 12 (the running profile) extended this same precedent: this
+session made 2 more live F06 calls with `f06.EDGE_SUB_PATTERN` wired in
+(one clean, one over a synthetic right-edge intrusion) and recorded them
+too - the live model genuinely returned `edge=right` for the intrusion
+scene, not a hand-picked value. See
+"...replays_genuine_recorded_f06_edge_sub_pattern" below.
 """
 
 from __future__ import annotations
@@ -37,12 +44,15 @@ import pytest
 from picstory import detectors
 from picstory.detectors._vision import (
     TOOL_NAME,
+    SubPatternSpec,
     VisionCallError,
     VisionRequest,
     VisionVerdict,
+    _tool_schema,
     judge,
     parse_tool_use_response,
 )
+from picstory.detectors.f06 import EDGE_SUB_PATTERN
 from picstory.frame import Frame
 from picstory.schema import taxonomy_detection_text
 
@@ -55,13 +65,15 @@ def _frame(frame_id: str = "t") -> Frame:
     return Frame(frame_id=frame_id, path=Path("."), rgb=rgb, exif={})
 
 
-def _spy_caller(detected: bool, rationale: str = "because reasons"):
+def _spy_caller(detected: bool, rationale: str = "because reasons", sub_pattern: str | None = None):
     """A fake VisionCaller that records the request it received and answers `detected`."""
     calls: list[VisionRequest] = []
 
     def caller(request: VisionRequest) -> VisionVerdict:
         calls.append(request)
-        return VisionVerdict(taxonomy_id=request.taxonomy_id, detected=detected, rationale=rationale)
+        return VisionVerdict(
+            taxonomy_id=request.taxonomy_id, detected=detected, rationale=rationale, sub_pattern=sub_pattern
+        )
 
     caller.calls = calls  # type: ignore[attr-defined]
     return caller
@@ -115,6 +127,40 @@ def test_f06_edge_intrusion_positive() -> None:
 
 def test_f06_edge_intrusion_negative() -> None:
     assert _detect_fn("F06")(_frame(), caller=_spy_caller(False)) is None
+
+
+# --- F06's edge sub_pattern (QUEUE.md item 12: the running profile) -------
+
+
+def test_f06_finding_carries_edge_sub_pattern_from_caller() -> None:
+    finding = _detect_fn("F06")(_frame(), caller=_spy_caller(True, "shoulder at right edge", sub_pattern="right"))
+    assert finding is not None
+    assert finding.sub_pattern == "right"
+
+
+def test_f06_finding_sub_pattern_none_when_caller_omits_it() -> None:
+    # A caller that never sets sub_pattern (e.g. an older/faked verdict) is
+    # still a valid Finding - sub_pattern is optional profile detail, not a
+    # required part of F06's own detection.
+    finding = _detect_fn("F06")(_frame(), caller=_spy_caller(True, "edge intrusion"))
+    assert finding is not None
+    assert finding.sub_pattern is None
+
+
+def test_f06_detector_request_carries_edge_sub_pattern_spec() -> None:
+    caller = _spy_caller(True, "x", sub_pattern="left")
+    _detect_fn("F06")(_frame(), caller=caller)
+    assert caller.calls[0].sub_pattern is EDGE_SUB_PATTERN
+
+
+@pytest.mark.parametrize("taxonomy_id", sorted(set(_MODULES) - {"F06"}))
+def test_only_f06_requests_a_sub_pattern(taxonomy_id: str) -> None:
+    # F06 is the only ID with a TAXONOMY.md Profile note
+    # (schema.taxonomy_ids_with_subpattern()) - every other judgment-
+    # dependent detector's request must carry no sub_pattern at all.
+    caller = _spy_caller(True, "x")
+    _detect_fn(taxonomy_id)(_frame(), caller=caller)
+    assert caller.calls[0].sub_pattern is None
 
 
 def test_f11_busy_background_behind_figures_positive() -> None:
@@ -204,6 +250,60 @@ def test_judge_rejects_caller_returning_mismatched_taxonomy_id() -> None:
         judge(_frame(), "F04", "some detection text", caller=wrong_id_caller)
 
 
+# --- _tool_schema()/_prompt(): sub_pattern is opt-in, enum-constrained ----
+
+
+def test_tool_schema_without_sub_pattern_has_no_extra_property() -> None:
+    schema = _tool_schema("F04")
+    assert set(schema["input_schema"]["properties"]) == {"taxonomy_id", "detected", "rationale"}
+
+
+def test_tool_schema_with_sub_pattern_adds_enum_constrained_property() -> None:
+    schema = _tool_schema("F06", EDGE_SUB_PATTERN)
+    edge_property = schema["input_schema"]["properties"]["edge"]
+    assert edge_property["enum"] == list(EDGE_SUB_PATTERN.enum_values)
+    # Not in `required` - the model omits it when detected is false; parsing
+    # (not the JSON schema) enforces "required when detected is true."
+    assert "edge" not in schema["input_schema"]["required"]
+
+
+# --- parse_tool_use_response()/sub_pattern extraction ----------------------
+
+
+def test_parse_tool_use_response_extracts_sub_pattern_when_detected() -> None:
+    response = _FakeResponse(
+        [_FakeToolUseBlock(TOOL_NAME, {"taxonomy_id": "F06", "detected": True, "rationale": "x", "edge": "left"})]
+    )
+    verdict = parse_tool_use_response(response, "F06", EDGE_SUB_PATTERN)
+    assert verdict.sub_pattern == "left"
+
+
+def test_parse_tool_use_response_sub_pattern_none_when_not_detected() -> None:
+    response = _FakeResponse(
+        [_FakeToolUseBlock(TOOL_NAME, {"taxonomy_id": "F06", "detected": False, "rationale": "clean"})]
+    )
+    verdict = parse_tool_use_response(response, "F06", EDGE_SUB_PATTERN)
+    assert verdict.sub_pattern is None
+
+
+def test_parse_tool_use_response_rejects_invalid_sub_pattern_when_detected() -> None:
+    response = _FakeResponse(
+        [
+            _FakeToolUseBlock(
+                TOOL_NAME, {"taxonomy_id": "F06", "detected": True, "rationale": "x", "edge": "diagonal"}
+            )
+        ]
+    )
+    with pytest.raises(VisionCallError):
+        parse_tool_use_response(response, "F06", EDGE_SUB_PATTERN)
+
+
+def test_parse_tool_use_response_rejects_missing_sub_pattern_when_detected() -> None:
+    response = _FakeResponse([_FakeToolUseBlock(TOOL_NAME, {"taxonomy_id": "F06", "detected": True, "rationale": "x"})])
+    with pytest.raises(VisionCallError):
+        parse_tool_use_response(response, "F06", EDGE_SUB_PATTERN)
+
+
 # --- default_caller() key resolution (DECISIONS.md D-006) ---------------
 # Patches anthropic.Anthropic itself so default_caller()'s real code runs
 # end-to-end (no live call - the fake client's constructor just records the
@@ -280,6 +380,15 @@ _RECORDED_CALLS = {
     "s01_landmark_with_figure.json": ("S01", False),
 }
 
+# F06 recordings carry EDGE_SUB_PATTERN and so need it passed to
+# parse_tool_use_response too - kept separate from _RECORDED_CALLS above
+# rather than bolting an always-None sub_pattern column onto every row.
+# fixture filename -> (taxonomy_id, expected detected, expected edge)
+_RECORDED_F06_CALLS = {
+    "f06_landmark_alone.json": (False, None),
+    "f06_edge_intrusion_right.json": (True, "right"),
+}
+
 
 def _load_recorded_response(fixture_name: str):
     from anthropic.types import Message
@@ -296,6 +405,20 @@ def test_parse_tool_use_response_replays_genuine_recorded_api_call(fixture_name:
     assert verdict.taxonomy_id == taxonomy_id
     assert verdict.detected is expected_detected
     assert verdict.rationale  # the live model always filled this in
+
+
+@pytest.mark.parametrize("fixture_name", sorted(_RECORDED_F06_CALLS))
+def test_parse_tool_use_response_replays_genuine_recorded_f06_edge_sub_pattern(fixture_name: str) -> None:
+    # DECISIONS.md D-006's precedent, extended for QUEUE.md item 12: these
+    # two recordings (scripts/record_vision_fixtures.py) are genuine live
+    # calls made with EDGE_SUB_PATTERN wired in, not a hand-authored guess
+    # at what the field would look like.
+    expected_detected, expected_edge = _RECORDED_F06_CALLS[fixture_name]
+    response = _load_recorded_response(fixture_name)
+    verdict = parse_tool_use_response(response, "F06", EDGE_SUB_PATTERN)
+    assert verdict.detected is expected_detected
+    assert verdict.sub_pattern == expected_edge
+    assert verdict.rationale
 
 
 def test_parse_tool_use_response_ignores_leading_text_block() -> None:

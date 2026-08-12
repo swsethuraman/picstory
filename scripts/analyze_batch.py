@@ -35,6 +35,17 @@ comparison call fails (network, spend cap - CLAUDE.md's spending rule: "log
 it, move on") is logged as a `ComparisonRun("error", ...)` rather than
 crashing the batch, the same non-fatal treatment `_run_f03` already gives a
 broken F03 detector.
+
+The running profile (item 12, TAXONOMY.md's "The running profile" output row)
+is updated once per `main()` run: `picstory.profile.load_profile` reads
+whatever this user's machine has recorded so far, `profile.record_session`
+folds this batch's final F/S findings (and F06's `edge` sub-pattern, when
+present) into it, and `profile.save_profile` persists the result -
+`run_batch_analysis` itself stays pure/testable (no I/O), the load/record/
+save sequence lives in `main()` alongside the CLI's other side effects (the
+`_report.py` write). `render_report` gained a `## Profile` section built
+from the already-updated `Profile`, so a batch report shows both this
+session's findings and how they fit the user's running pattern.
 """
 
 from __future__ import annotations
@@ -49,7 +60,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _report import report  # noqa: E402
 from analyze import DetectorRun, evaluable_ids, run_analysis  # noqa: E402
 
-from picstory import cmp, detectors, ranking  # noqa: E402
+from picstory import cmp, detectors, profile as profile_module, ranking  # noqa: E402
 from picstory.batch import load_batch  # noqa: E402
 from picstory.detectors import f03  # noqa: E402
 from picstory.detectors.base import DetectorNotImplemented  # noqa: E402
@@ -179,6 +190,7 @@ def render_report(
     output: AnalysisOutput,
     runs_by_frame: dict[str, list[DetectorRun]],
     comparison_runs: list[ComparisonRun] | None = None,
+    updated_profile: profile_module.Profile | None = None,
 ) -> str:
     all_runs = [r for runs in runs_by_frame.values() for r in runs]
     counts = _counts(all_runs)
@@ -239,6 +251,17 @@ def render_report(
             if comparison_run.status == "error":
                 lines.append(f"- {comparison_run.group} → error: {comparison_run.detail}")
 
+    lines += ["", "## Profile (per-user recurrence across sessions, this session included)", ""]
+    if updated_profile is None:
+        lines.append("(not recorded)")
+    else:
+        lines.append(f"sessions recorded: {updated_profile.sessions_recorded}")
+        summary = profile_module.summary_lines(updated_profile)
+        if summary:
+            lines += [f"- {line}" for line in summary]
+        else:
+            lines.append("- (no F- or S-item finding recorded yet)")
+
     lines += ["", "## Per-frame results", ""]
     for frame_analysis in output.frames:
         runs = runs_by_frame[frame_analysis.frame_id]
@@ -259,6 +282,12 @@ def render_report(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("photos", type=Path, nargs="+", help="5-50 photo paths")
+    parser.add_argument(
+        "--profile-path",
+        type=Path,
+        default=None,
+        help="running profile JSON file (default: PICSTORY_PROFILE_PATH env var, or ~/.picstory/profile.json)",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -274,7 +303,12 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     output, runs_by_frame, comparison_runs = run_batch_analysis(frames)
-    body = render_report(args.photos, output, runs_by_frame, comparison_runs)
+
+    profile_path = args.profile_path or profile_module.default_profile_path()
+    updated_profile = profile_module.record_session(profile_module.load_profile(profile_path), output.frames)
+    profile_module.save_profile(updated_profile, profile_path)
+
+    body = render_report(args.photos, output, runs_by_frame, comparison_runs, updated_profile)
     all_runs = [r for runs in runs_by_frame.values() for r in runs]
     counts = _counts(all_runs)
     summary = (

@@ -3,21 +3,24 @@
 "Per-frame analysis reusing Stage 1": this does not reimplement per-ID
 dispatch/classification. Each frame in the batch is run straight through
 `analyze.run_analysis` - the same function, same detected/clean/stub/error
-classification, same R01/F03 exclusion from the per-frame sweep - and the
-results are collected into one `AnalysisOutput` with one `FrameAnalysis`
+classification, same R01/F03/S03 exclusion from the per-frame sweep - and
+the results are collected into one `AnalysisOutput` with one `FrameAnalysis`
 per frame.
 
-F03 (near-duplicate grouping, item 8) is exactly the detector that per-frame
-sweep cannot run - its Detection text names "consecutive frames," a batch
-property (see `picstory.detectors.f03`'s module docstring). This is the
-first module with an actual batch to give it, so `run_batch_analysis` runs
-it once, across the whole ordered batch, after the per-frame sweep, and
-merges any resulting findings into their frames' `FrameAnalysis.findings` -
-the same detected/clean/stub/error classification as every other ID, not a
-separate code path with different semantics.
+F03 (near-duplicate grouping, item 8) and S03 (tight framing, DECISIONS.md
+D-007) are exactly the detectors that per-frame sweep cannot run - their
+Detection text each names a property of a set of frames, not of any one
+photo (see `picstory.detectors.f03`'s and `picstory.detectors.s03`'s module
+docstrings). This is the first module with an actual batch to give them, so
+`run_batch_analysis` runs each once, across the whole ordered batch, after
+the per-frame sweep, and merges any resulting findings into their frames'
+`FrameAnalysis.findings` via the shared `_run_batch_level_findings`/
+`_merge_batch_level_findings` helpers - the same detected/clean/stub/error
+classification as every other ID, not a separate code path with different
+semantics.
 
 Ranking/shortlist (item 9) is now wired in too: once the per-frame sweep and
-F03's merge have produced the batch's final findings, `picstory.ranking`
+F03/S03's merges have produced the batch's final findings, `picstory.ranking`
 scores every frame (S-item findings for, F-item findings against - see that
 module's docstring for why) and `run_batch_analysis` sets `AnalysisOutput.pick`
 from the top-ranked frame. The session habit (item 10) runs over the same
@@ -33,11 +36,11 @@ groups themselves). Each group is judged once via `picstory.cmp.compare_group`
 and the result appended to `AnalysisOutput.comparisons`. A group whose
 comparison call fails (network, spend cap - CLAUDE.md's spending rule: "log
 it, move on") is logged as a `ComparisonRun("error", ...)` rather than
-crashing the batch, the same non-fatal treatment `_run_f03` already gives a
-broken F03 detector.
+crashing the batch, the same non-fatal treatment `_run_batch_level_findings`
+already gives a broken F03/S03 detector.
 
 R01 (item 13, TAXONOMY.md §R) runs after ranking/habit, over the same final
-per-frame findings (F03's merge included, same set `ranking.compute_habit`
+per-frame findings (F03/S03's merges included, same set `ranking.compute_habit`
 sees): `picstory.detectors.r01.detect` takes the batch's `FrameAnalysis`
 list (not raw frames - R01's trigger is "F12 findings in the batch," a
 property of already-computed findings, not something to re-derive from
@@ -75,7 +78,7 @@ from picstory.batch import load_batch  # noqa: E402
 from picstory.detectors import f03, r01  # noqa: E402
 from picstory.detectors.base import DetectorNotImplemented  # noqa: E402
 from picstory.frame import Frame  # noqa: E402
-from picstory.schema import AnalysisOutput, FrameAnalysis, Rule  # noqa: E402
+from picstory.schema import AnalysisOutput, Finding, FrameAnalysis, Rule  # noqa: E402
 
 
 @dataclass(frozen=True)
@@ -85,24 +88,58 @@ class ComparisonRun:
     detail: str | None
 
 
-def _run_f03(
-    frames: list[Frame], detector_lookup
-) -> tuple[dict[str, object], str | None, str | None]:
-    """Run the batch-level F03 detector once; classify like any other ID.
+def _run_batch_level_findings(
+    taxonomy_id: str, frames: list[Frame], detector_lookup
+) -> tuple[dict[str, Finding], str | None, str | None]:
+    """Run one batch-level, dict-of-Findings detector (F03 or S03) once.
 
-    Returns `(findings_by_frame_id, error_status, error_detail)`.
-    `error_status`/`error_detail` are set (and `findings_by_frame_id` empty)
-    on "stub"/"error", mirroring `analyze.run_analysis`'s per-ID try/except
-    so F03 gets the same three-way outcome (detected/clean vs. stub vs.
-    error) as every ID the per-frame loop already classifies.
+    Both take the whole ordered batch and return `{frame_id: Finding}`
+    (see f03.py/s03.py's own docstrings for why each is batch-level, not
+    per-frame). Returns `(findings_by_frame_id, error_status, error_detail)`
+    - `error_status`/`error_detail` are set (and `findings_by_frame_id`
+    empty) on "stub"/"error", mirroring `analyze.run_analysis`'s per-ID
+    try/except so a batch-level ID gets the same three-way outcome
+    (detected/clean vs. stub vs. error) as every ID the per-frame loop
+    already classifies.
     """
-    detect_f03 = detector_lookup("F03")
+    detect = detector_lookup(taxonomy_id)
     try:
-        return detect_f03(frames), None, None
+        return detect(frames), None, None
     except DetectorNotImplemented as exc:
         return {}, "stub", str(exc)
     except Exception as exc:  # noqa: BLE001 - a blocked detector is logged, not fatal
         return {}, "error", f"{type(exc).__name__}: {exc}"
+
+
+def _merge_batch_level_findings(
+    taxonomy_id: str,
+    findings: dict[str, Finding],
+    error_status: str | None,
+    error_detail: str | None,
+    frame_analyses: list[FrameAnalysis],
+    runs_by_frame: dict[str, list[DetectorRun]],
+) -> None:
+    """Fold one batch-level detector's per-frame outcome into the sweep's results, in place.
+
+    Same detected/clean/stub/error classification `_run_batch_level_findings`
+    produces, applied to every frame in the batch (not just the ones with a
+    Finding) so a batch-level ID's `DetectorRun` shows up per frame exactly
+    like a per-frame ID's does.
+    """
+    for frame_analysis in frame_analyses:
+        if error_status is not None:
+            runs_by_frame[frame_analysis.frame_id].append(
+                DetectorRun(taxonomy_id, error_status, error_detail)
+            )
+            continue
+        finding = findings.get(frame_analysis.frame_id)
+        if finding is None:
+            runs_by_frame[frame_analysis.frame_id].append(DetectorRun(taxonomy_id, "clean", None))
+        else:
+            frame_analysis.findings.append(finding)
+            runs_by_frame[frame_analysis.frame_id].append(
+                DetectorRun(taxonomy_id, "detected", finding.description)
+            )
 
 
 def _run_comparisons(
@@ -160,20 +197,21 @@ def run_batch_analysis(
     ids: list[str] | None = None,
     cmp_compare=cmp.compare_group,
 ) -> tuple[AnalysisOutput, dict[str, list[DetectorRun]], list[ComparisonRun]]:
-    """Run Stage 1's per-frame sweep over every frame in a batch, then F03, ranking, and CMP.
+    """Run Stage 1's per-frame sweep over every frame in a batch, then F03/S03, ranking, and CMP.
 
     `detector_lookup` is threaded through unchanged so tests can inject a
     fake registry exactly as `test_cli_analyze.py` does for the single-photo
     CLI - no live API key or network needed to exercise this dispatch logic.
-    `ids` (default `evaluable_ids()`, which already excludes F03) governs
-    only the per-frame sweep; F03 always runs once via `detector_lookup`
-    regardless of `ids`, since it is not part of that sweep at all. Ranking
-    (item 9) runs next, over the final per-frame findings (F03's merge
-    included), so a safety-copy finding counts against its frame's score the
-    same as any other F-item would. R01 (item 13) runs next, over the same
-    final findings (see `_run_r01`). CMP (item 11) runs last, over F03's own
-    near-duplicate groups (`cmp_compare` injected the same way for tests -
-    see `_run_comparisons`).
+    `ids` (default `evaluable_ids()`, which already excludes F03/S03) governs
+    only the per-frame sweep; F03 and S03 each always run once via
+    `detector_lookup` regardless of `ids`, since neither is part of that
+    sweep at all. Ranking (item 9) runs next, over the final per-frame
+    findings (F03/S03's merges included), so a safety-copy or tight-framing
+    finding counts toward its frame's score the same as any other F-/S-item
+    would. R01 (item 13) runs next, over the same final findings (see
+    `_run_r01`). CMP (item 11) runs last, over F03's own near-duplicate
+    groups (`cmp_compare` injected the same way for tests - see
+    `_run_comparisons`).
     """
     ids = evaluable_ids() if ids is None else ids
     frame_analyses: list[FrameAnalysis] = []
@@ -183,21 +221,19 @@ def run_batch_analysis(
         frame_analyses.append(output.frames[0])
         runs_by_frame[frame.frame_id] = runs
 
-    f03_findings, f03_error_status, f03_error_detail = _run_f03(frames, detector_lookup)
-    for frame_analysis in frame_analyses:
-        if f03_error_status is not None:
-            runs_by_frame[frame_analysis.frame_id].append(
-                DetectorRun("F03", f03_error_status, f03_error_detail)
-            )
-            continue
-        finding = f03_findings.get(frame_analysis.frame_id)
-        if finding is None:
-            runs_by_frame[frame_analysis.frame_id].append(DetectorRun("F03", "clean", None))
-        else:
-            frame_analysis.findings.append(finding)
-            runs_by_frame[frame_analysis.frame_id].append(
-                DetectorRun("F03", "detected", finding.description)
-            )
+    f03_findings, f03_error_status, f03_error_detail = _run_batch_level_findings(
+        "F03", frames, detector_lookup
+    )
+    _merge_batch_level_findings(
+        "F03", f03_findings, f03_error_status, f03_error_detail, frame_analyses, runs_by_frame
+    )
+
+    s03_findings, s03_error_status, s03_error_detail = _run_batch_level_findings(
+        "S03", frames, detector_lookup
+    )
+    _merge_batch_level_findings(
+        "S03", s03_findings, s03_error_status, s03_error_detail, frame_analyses, runs_by_frame
+    )
 
     pick = ranking.build_pick(frame_analyses)
     habit = ranking.compute_habit(frame_analyses)
@@ -239,7 +275,8 @@ def render_report(
             f"{counts['stub']} stub, {counts['error']} error "
             f"across {len(output.frames)} frames x {ids_per_frame} evaluable IDs "
             "each (R01 excluded - batch/conditional, not a per-frame detector; "
-            "F03 included, evaluated once across the batch rather than per-frame)"
+            "F03/S03 included, each evaluated once across the batch rather "
+            "than per-frame)"
         ),
         "",
         (

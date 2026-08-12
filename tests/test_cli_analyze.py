@@ -52,17 +52,19 @@ def test_evaluable_ids_excludes_the_conditional_batch_rule() -> None:
     # per-ID name check without R01 having genuine detector-substance
     # coverage, which is exactly the gap that guard exists to catch.
     #
-    # F03 is excluded for a different reason (it takes a whole batch, not
-    # one Frame - see picstory.detectors.f03's module docstring) but the
-    # same "no incidental ID-name coverage" concern doesn't apply to it:
-    # F03 already has genuine detector-substance tests naming it
-    # (tests/test_f03_safety_copies.py), so asserting its exclusion here
-    # by name doesn't launder missing coverage the way it would for R01.
+    # F03 and S03 are excluded for a different reason (each takes a whole
+    # batch, not one Frame - see picstory.detectors.f03's and .s03's module
+    # docstrings) but the same "no incidental ID-name coverage" concern
+    # doesn't apply to either: both already have genuine detector-substance
+    # tests naming them (tests/test_f03_safety_copies.py,
+    # tests/test_s03_tight_framing.py), so asserting their exclusion here by
+    # name doesn't launder missing coverage the way it would for R01.
     ids = analyze.evaluable_ids()
     assert "R01" not in ids
     assert "F03" not in ids
-    assert set(ids) == taxonomy_ids() - {"R01", "F03"}
-    assert len(ids) == 18
+    assert "S03" not in ids
+    assert set(ids) == taxonomy_ids() - {"R01", "F03", "S03"}
+    assert len(ids) == 17
 
 
 # --- run_analysis(): per-ID classification --------------------------------

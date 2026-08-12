@@ -5,10 +5,11 @@ Same import-shim and detector-injection pattern as test_cli_analyze.py:
 `analyze_batch.py` lives under scripts/, and `run_batch_analysis` takes a
 `detector_lookup` so these tests never touch the real (network-calling)
 vision detectors - CLAUDE.md requires the test suite to run offline. F03's
-real batch-level grouping is a pure local computation (no network), so its
-own behavior is tested directly in test_f03_safety_copies.py; here it is
-mostly stubbed to `{}` (no findings) so tests that only care about the
-per-frame sweep aren't coupled to F03's actual grouping decisions.
+and S03's real batch-level logic are pure local computations (no network),
+so their own behavior is tested directly in test_f03_safety_copies.py and
+test_s03_tight_framing.py; here they are mostly stubbed to `{}` (no
+findings) so tests that only care about the per-frame sweep aren't coupled
+to either one's actual grouping decisions.
 
 `_frame()` gives every frame a distinct EXIF `FocalLength`, which is enough
 on its own to break `detectors.f03.group_near_duplicates`'s pairwise check
@@ -56,12 +57,16 @@ def _no_f03_findings(frames):
     return {}
 
 
+def _no_s03_findings(frames):
+    return {}
+
+
 def _no_r01_rule(frame_analyses):
     return None
 
 
 def _lookup(table: dict[str, object]):
-    table = {"F03": _no_f03_findings, "R01": _no_r01_rule, **table}
+    table = {"F03": _no_f03_findings, "S03": _no_s03_findings, "R01": _no_r01_rule, **table}
     return lambda taxonomy_id: table[taxonomy_id]
 
 
@@ -92,9 +97,10 @@ def test_run_batch_analysis_aggregates_one_frame_analysis_per_frame() -> None:
     assert [fa.frame_id for fa in output.frames] == ["00_a", "01_b", "02_c"]
     assert set(runs_by_frame) == {"00_a", "01_b", "02_c"}
     for frame_id in runs_by_frame:
-        # F03 always runs too (see module docstring) even though `ids` here
-        # only names F06/F07 - `ids` governs the per-frame sweep, not F03.
-        assert {r.taxonomy_id for r in runs_by_frame[frame_id]} == {"F06", "F07", "F03"}
+        # F03/S03 always run too (see module docstring) even though `ids`
+        # here only names F06/F07 - `ids` governs the per-frame sweep, not
+        # F03/S03.
+        assert {r.taxonomy_id for r in runs_by_frame[frame_id]} == {"F06", "F07", "F03", "S03"}
 
 
 def test_run_batch_analysis_findings_stay_scoped_to_their_own_frame() -> None:
@@ -406,8 +412,8 @@ def test_render_report_includes_per_frame_sections_and_totals() -> None:
         [Path("a.jpg"), Path("b.jpg")], output, runs_by_frame
     )
 
-    # F06 detected x2 + F07 clean x2 + F03 clean x2 (stubbed to no findings).
-    assert "2 detected, 4 clean, 0 stub, 0 error" in body
+    # F06 detected x2 + F07 clean x2 + F03 clean x2 + S03 clean x2 (both stubbed to no findings).
+    assert "2 detected, 6 clean, 0 stub, 0 error" in body
     assert "### 00_a:" in body
     assert "### 01_b:" in body
     assert "- F06 [detected] — edge intrusion" in body

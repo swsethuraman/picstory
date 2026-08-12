@@ -4,7 +4,8 @@ TAXONOMY.md detection text: "2-5 consecutive frames of the same subject with
 no change in position, focal length, or angle. Copies, not variations."
 
 That is a property of a *run* of frames, not of any one photo - the same
-shape of gap D-005 identified for F14/S03, except here batch context now
+shape of gap D-005 originally identified for F14/S03 (S03 now implemented
+separately, per D-007 - see `detectors.s03`), except here batch context now
 exists (QUEUE.md item 7's `picstory.batch.load_batch`), so it gets
 implemented for real rather than staying a deferred stub. `detect()` below
 therefore does not use the one-frame `detect(frame) -> Finding | None`

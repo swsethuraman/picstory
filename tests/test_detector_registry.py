@@ -59,14 +59,15 @@ def test_duplicate_registration_rejected() -> None:
 # for nine more (tests/test_vision_detectors.py), item 8 for F03
 # (tests/test_f03_safety_copies.py - a batch-level detector, so it is
 # exercised there rather than through this file's zero-arg stub-call
-# pattern below), and item 13 for R01 (tests/test_r01_haze_rule.py - also
-# batch-level, also exercised there rather than here). Remaining stubs: F14
-# and S03 are deferred per DECISIONS.md D-005 - their Detection text
-# describes a property of a batch of frames, not of any single photo, so
-# they cannot be honestly implemented until Stage 2 gives detectors batch
-# context (which F03 and R01 now have and use). Shrink this set as those
-# land.
-_STILL_STUBBED = frozenset({"F14", "S03"})
+# pattern below), item 13 for R01 (tests/test_r01_haze_rule.py - also
+# batch-level, also exercised there rather than here), and (this session,
+# DECISIONS.md D-007) for S03 (tests/test_s03_tight_framing.py - also
+# batch-level). Remaining stub: F14 stays deferred per D-007's ruling,
+# standing for the remainder of the experiment - its honest precondition
+# (EXIF GPS location clustering) is deliberately out of scope. Unlike every
+# ID above it, this is the documented, intended end state of this guard for
+# this experiment, not a "land it later" placeholder.
+_STILL_STUBBED = frozenset({"F14"})
 
 
 def test_unimplemented_stub_raises_not_implemented() -> None:

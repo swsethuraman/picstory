@@ -1,12 +1,17 @@
 """Behavior tests for the QUEUE.md item 4 judgment-dependent (Anthropic API
 vision-call) detectors: F04, F05, F06, F11, F13, F15, S01, S02, S04.
 
-F14 and S03 are NOT covered here - see `src/picstory/detectors/f14.py` and
-`s03.py` and DECISIONS.md D-005: their Detection text is a property of a
-batch of frames, not of any single photo, so they cannot be honestly
-implemented at this single-photo stage and remain
-`DetectorNotImplemented` stubs (already covered by
+F14 is NOT covered here - see `src/picstory/detectors/f14.py` and
+DECISIONS.md D-007: its Detection text is a property of a batch of frames
+from one location, not of any single photo, so it cannot be honestly
+implemented at this single-photo stage and remains a
+`DetectorNotImplemented` stub (already covered by
 `tests/test_detector_registry.py::test_unimplemented_stub_raises_not_implemented`).
+S03 was the same shape of gap under DECISIONS.md D-005, but D-007
+implemented it for real against batch-level subject clustering - see
+`src/picstory/detectors/s03.py` and `tests/test_s03_tight_framing.py`, not
+here (it is batch-level, not a single-frame vision call, the same split
+F03/R01 already get).
 
 Fixture note (DECISIONS.md D-006): earlier sessions had no working API key,
 so every response shape here was hand-authored to match the documented

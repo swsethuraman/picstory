@@ -2,7 +2,7 @@
 
 D-nnn format, stable IDs. BUILDER writes here when blocked (question, options, recommendation, reasoning) and moves on. CRITIC may add entries and may not close them. Only the human writes rulings; rulings are appended, never rewritten. **At five open decisions, both routines halt and write HALT.md.**
 
-Open count: 1
+Open count: 0
 
 ---
 
@@ -117,7 +117,7 @@ Open count: 1
   acceptable until a live call succeeds. If neither variable is visible in
   the session, fall back to option (b): the owner records fixtures locally.
 
-## D-007 · F14/S03: what grouping do "a location" and "batch-mates" actually mean?
+## D-007 · F14/S03: what grouping do "a location" and "batch-mates" actually mean? — **RULED**
 - **Question:** D-005 deferred F14 (Wide-shot monoculture) and S03 (Tight
   framing) "until Stage 2 lands, then implement them properly against the
   batch." Stage 2 (QUEUE.md items 7-10: batch input, F03 near-duplicate
@@ -168,3 +168,27 @@ Open count: 1
   blocked on a genuine open question (what grouping to build) rather than on
   waiting for Stage 2, and CLAUDE.md is explicit that this belongs in
   DECISIONS.md rather than being quietly carried forward.
+- **Ruling (12 Aug 2026, owner):** Split by ID; this entry's own
+  too-narrow-substitute reasoning is accepted in full.
+  - **S03: modified (a), scoped small.** Implement subject clustering as a
+    wider perceptual-similarity grouping — the relaxed variant this entry's
+    option (a) itself names: a looser Hamming threshold than F03's, no
+    focal-length or timestamp gates, so "same subject, different
+    attempts/angles" cluster together where F03's "copies, not variations"
+    deliberately does not. New, separately-tested grouping logic (own
+    constants, documented as distinct from F03's calibration; in
+    `duplicates.py` or a sibling module), then implement S03 against those
+    subject clusters per its Detection text ("the tightest frame of a
+    subject among its batch-mates"), with per-ID named tests so the
+    coverage guard's `missing_test` drops S03.
+  - **F14: (c), standing for the remainder of the experiment.** Its honest
+    precondition is location clustering (EXIF GPS parsing + clustering +
+    documented no-GPS fallback semantics) — deliberately out of scope for
+    the remaining session budget. Batch-as-location and F03-groups-as-
+    location are both rejected as too-narrow substitutes, per this entry's
+    reasoning. F14 stays a visible `DetectorNotImplemented` stub;
+    `missing_test = [F14]` is the documented, intended end state of the
+    coverage guard for this experiment, and location clustering is named
+    post-experiment work.
+  - Agreed that "D-005 covers F14/S03" is no longer an accurate citation;
+    worklogs should cite D-007 from here forward.

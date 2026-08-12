@@ -100,6 +100,58 @@ def hamming_distance(a: np.ndarray, b: np.ndarray) -> int:
     return int(np.count_nonzero(a != b))
 
 
+def sharp_area_fraction(
+    luminance: np.ndarray,
+    grid: int = 16,
+    relative_threshold: float = 1.5,
+    min_energy_floor: float = 16.0,
+) -> float:
+    """Area share of the largest connected "sharp" (in-focus) tile blob.
+
+    Tiles `luminance` into a `grid` x `grid` grid and scores each tile by its
+    mean squared Laplacian ("energy") - the same high-pass Laplacian
+    `sharpness_score` already uses globally (a variance-of-Laplacian
+    sharpness measure), localized per tile the way `_local_variance` in
+    f02.py localizes plain luminance variance. A tile counts as "sharp" if
+    its energy exceeds `relative_threshold` x the grid's own median tile
+    energy - relative to each image's own sharpness distribution, not an
+    absolute level, since photos vary hugely in overall sharpness/ISO noise.
+    `min_energy_floor` guards the case where most of the grid is genuinely
+    flat (median at or near zero, e.g. a plain sky or a synthetic flat test
+    fixture): without it, any nonzero tile - including ordinary rounding
+    noise - would clear a relative threshold computed against a
+    near-zero baseline.
+
+    Returns the largest 4-connected sharp region's tile count as a fraction
+    of the whole grid; 0.0 if no tile is sharp (including an entirely flat
+    image). This is a proxy for how much of the frame the in-focus subject
+    fills, not a real subject segmentation - like every other disclosed
+    local proxy in this package (F09's center-third, F03's dHash-as-pose),
+    it can misread a scene where the background is itself sharp/textured
+    and the subject is soft. It also breaks down at the extreme where the
+    subject fills nearly the whole frame (no flat-background majority left
+    to set a low baseline against, so the relative threshold rises and the
+    reported share can drop rather than saturate) - a known proxy limit,
+    not a case this function tries to correct for, the same kind of
+    disclosed edge F07 handles with an explicit upper bound instead.
+    """
+    lap = laplacian(luminance)
+    energy = lap * lap
+    h, w = energy.shape
+    th, tw = max(1, h // grid), max(1, w // grid)
+    h_trim, w_trim = th * (h // th), tw * (w // tw)
+    trimmed = energy[:h_trim, :w_trim]
+    if trimmed.size == 0:
+        return 0.0
+    tiles = trimmed.reshape(h_trim // th, th, w_trim // tw, tw)
+    tile_energy = tiles.mean(axis=(1, 3))
+    threshold = max(relative_threshold * float(np.median(tile_energy)), min_energy_floor)
+    sharp = tile_energy > threshold
+    if not sharp.any():
+        return 0.0
+    return largest_connected_area(sharp) / sharp.size
+
+
 def largest_connected_area(mask: np.ndarray) -> int:
     """Pixel count of the largest 4-connected True region in a 2-D bool array."""
     visited = np.zeros_like(mask, dtype=bool)

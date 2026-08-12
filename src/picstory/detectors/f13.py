@@ -9,8 +9,8 @@ Detection text: "Large subject with nothing indicating its size; the set
 reads as 'one idea repeated,' a record rather than an experience." The
 operative condition - no scale reference for a large subject - is decidable
 from one frame; "the set reads as..." is the batch-level consequence of the
-same per-frame gap recurring, not a separate multi-frame precondition (unlike
-F14/S03 - see DECISIONS.md D-005).
+same per-frame gap recurring, not a separate multi-frame precondition
+(unlike F14, still deferred - see DECISIONS.md D-007).
 """
 
 from __future__ import annotations

@@ -44,3 +44,22 @@ BUILDER works top-down, one item per commit where feasible. Items marked `[block
     since builder-007 with nothing left gating this one). No DECISIONS.md
     entry needed — unlike F14/S03 (D-005), R01's trigger condition (F12
     present in the batch) is unambiguous from TAXONOMY.md's own text.
+
+14. `[agent-proposed]` S03 (Tight framing): implement as a real batch-level
+    detector per DECISIONS.md D-007's ruling (modified option (a), scoped
+    small), replacing its `DetectorNotImplemented` stub. Two pieces: (1)
+    `detectors.subject_clusters.group_subject_clusters` — a wider,
+    separately-calibrated perceptual-similarity grouping than F03's
+    near-duplicate runs (looser Hamming threshold, no focal-length/timestamp
+    gate, non-adjacent pairs allowed to cluster), giving "batch-mates" its
+    own honest meaning distinct from F03's "copies, not variations"; (2)
+    `detectors.s03.detect`, which picks the highest framing-tightness frame
+    in each cluster via a new local proxy (`_imaging.sharp_area_fraction`:
+    largest contiguous in-focus tile-blob, disclosed the same way F09's
+    center-third and F03's dHash-as-pose already are). Excluded from the
+    per-frame sweep (`scripts/analyze.py`) and wired into the batch pipeline
+    (`scripts/analyze_batch.py`) the same way F03 already is. F14 is not
+    addressed here — D-007 ruled it stays stubbed for the remainder of the
+    experiment (its honest precondition, location clustering, is out of
+    scope). No further DECISIONS.md entry needed — D-007 already carries the
+    ruling this item implements.

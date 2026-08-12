@@ -37,6 +37,10 @@ _CORRECTION_LINE = re.compile(
     r"^### (?P<id>[FSR]\d{2}) ·.*\n(?:^-.*\n)*?^- \*\*Correction:\*\* (?P<text>.+)$",
     re.MULTILINE,
 )
+_CMP_SECTION = re.compile(
+    r"^## CMP — The three-frame comparison rubric\n\n(?P<text>.*?)\n\n---\n",
+    re.MULTILINE | re.DOTALL,
+)
 
 
 class SchemaError(ValueError):
@@ -120,6 +124,27 @@ def taxonomy_correction_text(taxonomy_id: str) -> str:
         return _correction_texts()[taxonomy_id]
     except KeyError:
         raise SchemaError(f"no Correction text found for taxonomy_id {taxonomy_id!r}") from None
+
+
+@lru_cache(maxsize=1)
+def cmp_rubric_text() -> str:
+    """TAXONOMY.md's CMP section, verbatim, in full.
+
+    Same single-source-of-truth reasoning as `taxonomy_detection_text`: QUEUE.md
+    item 11 implements "the three axes + story tiebreaker, exactly as
+    TAXONOMY.md §CMP," and CLAUDE.md's API-discipline rule requires a
+    model-call detector's prompt to embed the item's own text verbatim. CMP has
+    no `- **Detection:**` bullet the way F/S items do (it is a rubric, not a
+    single-condition check), so the whole section - the three named axes, the
+    story tiebreaker, and the "what the output names" closing line - stands in
+    for that role; there is no narrower "the detection text" to extract
+    instead.
+    """
+    text = _TAXONOMY_MD.read_text(encoding="utf-8")
+    match = _CMP_SECTION.search(text)
+    if match is None:
+        raise SchemaError("no CMP rubric section found in TAXONOMY.md")
+    return match.group("text").strip()
 
 
 @dataclass
@@ -223,13 +248,68 @@ class Habit:
 
 
 @dataclass
+class Comparison:
+    """One three-frame comparison over a near-duplicate group (TAXONOMY.md §CMP).
+
+    Draws exclusively on the CMP rubric's own vocabulary, per TAXONOMY.md's
+    output-mapping table ("Three-frame comparison | The CMP rubric,
+    exclusively") - deliberately no F/S taxonomy IDs anywhere on this
+    dataclass, unlike `Pick`/`Habit`.
+    """
+
+    group: list[str]
+    winner_frame_id: str
+    subject_placement: str
+    edge_amputations: str
+    incidental_distractions: str
+    tiebreaker: str | None = None
+
+    def __post_init__(self) -> None:
+        if len(self.group) < 2:
+            raise SchemaError("a comparison group must have at least 2 frames")
+        if self.winner_frame_id not in self.group:
+            raise SchemaError(
+                f"winner_frame_id {self.winner_frame_id!r} is not among the compared group {self.group!r}"
+            )
+        for axis_name, value in (
+            ("subject_placement", self.subject_placement),
+            ("edge_amputations", self.edge_amputations),
+            ("incidental_distractions", self.incidental_distractions),
+        ):
+            if not value or not value.strip():
+                raise SchemaError(f"comparison {axis_name} must be a non-empty description")
+
+    def to_dict(self) -> dict:
+        return {
+            "group": self.group,
+            "winner_frame_id": self.winner_frame_id,
+            "subject_placement": self.subject_placement,
+            "edge_amputations": self.edge_amputations,
+            "incidental_distractions": self.incidental_distractions,
+            "tiebreaker": self.tiebreaker,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> Comparison:
+        return cls(
+            group=list(data["group"]),
+            winner_frame_id=data["winner_frame_id"],
+            subject_placement=data["subject_placement"],
+            edge_amputations=data["edge_amputations"],
+            incidental_distractions=data["incidental_distractions"],
+            tiebreaker=data.get("tiebreaker"),
+        )
+
+
+@dataclass
 class AnalysisOutput:
-    """Top-level output of an analysis run: version, frames, pick, habit."""
+    """Top-level output of an analysis run: version, frames, pick, habit, comparisons."""
 
     schema_version: str = SCHEMA_VERSION
     frames: list[FrameAnalysis] = field(default_factory=list)
     pick: Pick | None = None
     habit: Habit | None = None
+    comparisons: list[Comparison] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if self.schema_version != SCHEMA_VERSION:
@@ -239,6 +319,10 @@ class AnalysisOutput:
         frame_ids = {f.frame_id for f in self.frames}
         if self.pick is not None and self.pick.frame_id not in frame_ids:
             raise SchemaError(f"pick.frame_id {self.pick.frame_id!r} is not among analyzed frames")
+        for comparison in self.comparisons:
+            unknown = [fid for fid in comparison.group if fid not in frame_ids]
+            if unknown:
+                raise SchemaError(f"comparison group references unknown frame_id(s) {unknown!r}")
 
     def to_dict(self) -> dict:
         return {
@@ -246,6 +330,7 @@ class AnalysisOutput:
             "frames": [f.to_dict() for f in self.frames],
             "pick": self.pick.to_dict() if self.pick is not None else None,
             "habit": self.habit.to_dict() if self.habit is not None else None,
+            "comparisons": [c.to_dict() for c in self.comparisons],
         }
 
     def to_json(self, **kwargs) -> str:
@@ -258,6 +343,7 @@ class AnalysisOutput:
             frames=[FrameAnalysis.from_dict(f) for f in data.get("frames", [])],
             pick=Pick.from_dict(data["pick"]) if data.get("pick") else None,
             habit=Habit.from_dict(data["habit"]) if data.get("habit") else None,
+            comparisons=[Comparison.from_dict(c) for c in data.get("comparisons", [])],
         )
 
     @classmethod

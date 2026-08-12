@@ -10,11 +10,13 @@ import pytest
 from picstory.schema import (
     SCHEMA_VERSION,
     AnalysisOutput,
+    Comparison,
     Finding,
     FrameAnalysis,
     Habit,
     Pick,
     SchemaError,
+    cmp_rubric_text,
     taxonomy_correction_text,
     taxonomy_detection_text,
     taxonomy_ids,
@@ -190,3 +192,134 @@ def test_taxonomy_correction_text_missing_for_s_and_r_items() -> None:
 
 def test_taxonomy_correction_text_distinct_from_detection_text() -> None:
     assert taxonomy_correction_text("F01") != taxonomy_detection_text("F01")
+
+
+def test_cmp_rubric_text_contains_the_three_axes_and_tiebreaker_verbatim() -> None:
+    # Hand-transcribed from TAXONOMY.md's §CMP section - same drift guard
+    # style as the Detection/Reinforcement/Correction text tests above, but
+    # as verbatim substrings (not full equality): CMP's own text spans
+    # several paragraphs, not one bullet line.
+    text = cmp_rubric_text()
+    assert (
+        "1. **Subject placement** — position relative to center / thirds / "
+        "the composition's focal lines." in text
+    )
+    assert (
+        "2. **Edge amputations** — which elements each frame cuts at its "
+        "edges, and whether the cuts are committed or accidental." in text
+    )
+    assert (
+        "3. **Incidental distractions** — exit signs, vehicles, bystanders, "
+        "clutter present in one frame and absent in another." in text
+    )
+    assert (
+        "**Tiebreaker:** a story element wins. A frame with a mid-stride "
+        "walker or a gaze line beats a cleaner empty record of the same "
+        "scene." in text
+    )
+
+
+def test_cmp_rubric_text_excludes_the_next_section_heading() -> None:
+    # Regression guard for the regex's own end boundary: it must stop before
+    # "## U", not swallow the next section.
+    assert "## U" not in cmp_rubric_text()
+    assert "unclassified" not in cmp_rubric_text()
+
+
+def test_comparison_requires_at_least_two_frames() -> None:
+    with pytest.raises(SchemaError):
+        Comparison(
+            group=["IMG_1.jpg"],
+            winner_frame_id="IMG_1.jpg",
+            subject_placement="x",
+            edge_amputations="y",
+            incidental_distractions="z",
+        )
+
+
+def test_comparison_winner_must_be_in_group() -> None:
+    with pytest.raises(SchemaError):
+        Comparison(
+            group=["IMG_1.jpg", "IMG_2.jpg"],
+            winner_frame_id="IMG_3.jpg",
+            subject_placement="x",
+            edge_amputations="y",
+            incidental_distractions="z",
+        )
+
+
+def test_comparison_axes_require_non_empty_text() -> None:
+    with pytest.raises(SchemaError):
+        Comparison(
+            group=["IMG_1.jpg", "IMG_2.jpg"],
+            winner_frame_id="IMG_1.jpg",
+            subject_placement="   ",
+            edge_amputations="y",
+            incidental_distractions="z",
+        )
+
+
+def test_comparison_valid_with_optional_tiebreaker() -> None:
+    c = Comparison(
+        group=["IMG_1.jpg", "IMG_2.jpg"],
+        winner_frame_id="IMG_2.jpg",
+        subject_placement="IMG_1 centers the tower; IMG_2 drifts left",
+        edge_amputations="IMG_1 clips the flag; IMG_2 doesn't",
+        incidental_distractions="a cyclist enters IMG_2",
+        tiebreaker="the cyclist mid-pedal reads as a moment",
+    )
+    assert c.tiebreaker is not None
+    assert c.to_dict()["winner_frame_id"] == "IMG_2.jpg"
+
+
+def test_comparison_tiebreaker_defaults_to_none() -> None:
+    c = Comparison(
+        group=["IMG_1.jpg", "IMG_2.jpg"],
+        winner_frame_id="IMG_1.jpg",
+        subject_placement="x",
+        edge_amputations="y",
+        incidental_distractions="z",
+    )
+    assert c.tiebreaker is None
+    assert c.to_dict()["tiebreaker"] is None
+
+
+def test_analysis_output_comparison_group_must_reference_known_frames() -> None:
+    with pytest.raises(SchemaError):
+        AnalysisOutput(
+            frames=[FrameAnalysis(frame_id="IMG_1.jpg")],
+            comparisons=[
+                Comparison(
+                    group=["IMG_1.jpg", "IMG_2.jpg"],
+                    winner_frame_id="IMG_1.jpg",
+                    subject_placement="x",
+                    edge_amputations="y",
+                    incidental_distractions="z",
+                )
+            ],
+        )
+
+
+def test_analysis_output_roundtrip_json_with_comparisons() -> None:
+    out = AnalysisOutput(
+        frames=[
+            FrameAnalysis(frame_id="IMG_1.jpg"),
+            FrameAnalysis(frame_id="IMG_2.jpg"),
+        ],
+        comparisons=[
+            Comparison(
+                group=["IMG_1.jpg", "IMG_2.jpg"],
+                winner_frame_id="IMG_2.jpg",
+                subject_placement="x",
+                edge_amputations="y",
+                incidental_distractions="z",
+                tiebreaker="a gaze line",
+            )
+        ],
+    )
+    round_tripped = AnalysisOutput.from_json(out.to_json())
+    assert round_tripped == out
+
+
+def test_analysis_output_default_comparisons_empty() -> None:
+    assert AnalysisOutput().comparisons == []

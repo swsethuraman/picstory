@@ -23,12 +23,25 @@ module's docstring for why) and `run_batch_analysis` sets `AnalysisOutput.pick`
 from the top-ranked frame. The session habit (item 10) runs over the same
 final findings: `ranking.compute_habit` sets `AnalysisOutput.habit` to
 whichever F- or S-item recurs across the most frames.
+
+CMP (item 11, TAXONOMY.md §CMP) runs last, over the same near-duplicate
+groups F03 already identifies (`picstory.detectors.f03.group_near_duplicates`
+- a pure local computation, called here directly rather than through F03's
+own registered `detect()`, since that returns per-frame Findings, not the
+groups themselves). Each group is judged once via `picstory.cmp.compare_group`
+(injectable as `cmp_compare`, same test-injection pattern as `detector_lookup`)
+and the result appended to `AnalysisOutput.comparisons`. A group whose
+comparison call fails (network, spend cap - CLAUDE.md's spending rule: "log
+it, move on") is logged as a `ComparisonRun("error", ...)` rather than
+crashing the batch, the same non-fatal treatment `_run_f03` already gives a
+broken F03 detector.
 """
 
 from __future__ import annotations
 
 import argparse
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -36,11 +49,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _report import report  # noqa: E402
 from analyze import DetectorRun, evaluable_ids, run_analysis  # noqa: E402
 
-from picstory import detectors, ranking  # noqa: E402
+from picstory import cmp, detectors, ranking  # noqa: E402
 from picstory.batch import load_batch  # noqa: E402
+from picstory.detectors import f03  # noqa: E402
 from picstory.detectors.base import DetectorNotImplemented  # noqa: E402
 from picstory.frame import Frame  # noqa: E402
 from picstory.schema import AnalysisOutput, FrameAnalysis  # noqa: E402
+
+
+@dataclass(frozen=True)
+class ComparisonRun:
+    group: list[str]
+    status: str  # "compared" | "error"
+    detail: str | None
 
 
 def _run_f03(
@@ -63,13 +84,45 @@ def _run_f03(
         return {}, "error", f"{type(exc).__name__}: {exc}"
 
 
+def _run_comparisons(
+    frames: list[Frame], cmp_compare
+) -> tuple[list, list[ComparisonRun]]:
+    """Run CMP over every near-duplicate group F03 identifies.
+
+    Returns `(comparisons, comparison_runs)`: `comparisons` are the
+    successful `schema.Comparison` results (destined for
+    `AnalysisOutput.comparisons`); `comparison_runs` names every attempted
+    group's outcome, success or failure, for the report - mirroring
+    `DetectorRun`'s detected/stub/error split, but per-group rather than
+    per-frame-per-ID since CMP is not a taxonomy-ID detector.
+    """
+    frames_by_id = {frame.frame_id: frame for frame in frames}
+    comparisons = []
+    comparison_runs: list[ComparisonRun] = []
+    for group_ids in f03.group_near_duplicates(frames):
+        group_frames = [frames_by_id[fid] for fid in group_ids]
+        try:
+            comparison = cmp_compare(group_frames)
+        except Exception as exc:  # noqa: BLE001 - a blocked comparison is logged, not fatal
+            comparison_runs.append(
+                ComparisonRun(group_ids, "error", f"{type(exc).__name__}: {exc}")
+            )
+            continue
+        comparisons.append(comparison)
+        comparison_runs.append(
+            ComparisonRun(group_ids, "compared", f"winner: {comparison.winner_frame_id}")
+        )
+    return comparisons, comparison_runs
+
+
 def run_batch_analysis(
     frames: list[Frame],
     *,
     detector_lookup=detectors.get,
     ids: list[str] | None = None,
-) -> tuple[AnalysisOutput, dict[str, list[DetectorRun]]]:
-    """Run Stage 1's per-frame sweep over every frame in a batch, then F03, then ranking.
+    cmp_compare=cmp.compare_group,
+) -> tuple[AnalysisOutput, dict[str, list[DetectorRun]], list[ComparisonRun]]:
+    """Run Stage 1's per-frame sweep over every frame in a batch, then F03, ranking, and CMP.
 
     `detector_lookup` is threaded through unchanged so tests can inject a
     fake registry exactly as `test_cli_analyze.py` does for the single-photo
@@ -77,9 +130,11 @@ def run_batch_analysis(
     `ids` (default `evaluable_ids()`, which already excludes F03) governs
     only the per-frame sweep; F03 always runs once via `detector_lookup`
     regardless of `ids`, since it is not part of that sweep at all. Ranking
-    (item 9) runs last, over the final per-frame findings (F03's merge
+    (item 9) runs next, over the final per-frame findings (F03's merge
     included), so a safety-copy finding counts against its frame's score the
-    same as any other F-item would.
+    same as any other F-item would. CMP (item 11) runs last, over F03's own
+    near-duplicate groups (`cmp_compare` injected the same way for tests -
+    see `_run_comparisons`).
     """
     ids = evaluable_ids() if ids is None else ids
     frame_analyses: list[FrameAnalysis] = []
@@ -107,7 +162,9 @@ def run_batch_analysis(
 
     pick = ranking.build_pick(frame_analyses)
     habit = ranking.compute_habit(frame_analyses)
-    return AnalysisOutput(frames=frame_analyses, pick=pick, habit=habit), runs_by_frame
+    comparisons, comparison_runs = _run_comparisons(frames, cmp_compare)
+    output = AnalysisOutput(frames=frame_analyses, pick=pick, habit=habit, comparisons=comparisons)
+    return output, runs_by_frame, comparison_runs
 
 
 def _counts(runs: list[DetectorRun]) -> dict[str, int]:
@@ -121,6 +178,7 @@ def render_report(
     photos: list[Path],
     output: AnalysisOutput,
     runs_by_frame: dict[str, list[DetectorRun]],
+    comparison_runs: list[ComparisonRun] | None = None,
 ) -> str:
     all_runs = [r for runs in runs_by_frame.values() for r in runs]
     counts = _counts(all_runs)
@@ -166,6 +224,21 @@ def render_report(
         else:
             lines.append("- (no S-item findings on the pick)")
 
+    lines += ["", "## Comparisons (TAXONOMY.md §CMP, near-duplicate groups only)", ""]
+    if not output.comparisons and not comparison_runs:
+        lines.append("(no near-duplicate groups in this batch)")
+    else:
+        for comparison in output.comparisons:
+            lines.append(f"- {comparison.group} → winner {comparison.winner_frame_id!r}")
+            lines.append(f"  - subject placement: {comparison.subject_placement}")
+            lines.append(f"  - edge amputations: {comparison.edge_amputations}")
+            lines.append(f"  - incidental distractions: {comparison.incidental_distractions}")
+            if comparison.tiebreaker:
+                lines.append(f"  - tiebreaker: {comparison.tiebreaker}")
+        for comparison_run in comparison_runs or []:
+            if comparison_run.status == "error":
+                lines.append(f"- {comparison_run.group} → error: {comparison_run.detail}")
+
     lines += ["", "## Per-frame results", ""]
     for frame_analysis in output.frames:
         runs = runs_by_frame[frame_analysis.frame_id]
@@ -200,8 +273,8 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    output, runs_by_frame = run_batch_analysis(frames)
-    body = render_report(args.photos, output, runs_by_frame)
+    output, runs_by_frame, comparison_runs = run_batch_analysis(frames)
+    body = render_report(args.photos, output, runs_by_frame, comparison_runs)
     all_runs = [r for runs in runs_by_frame.values() for r in runs]
     counts = _counts(all_runs)
     summary = (

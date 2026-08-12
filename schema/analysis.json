@@ -20,6 +20,11 @@
     },
     "habit": {
       "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/habit" }]
+    },
+    "comparisons": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/comparison" },
+      "default": []
     }
   },
   "$defs": {
@@ -102,6 +107,34 @@
           ]
         },
         "description": { "type": "string", "minLength": 1 }
+      }
+    },
+    "comparison": {
+      "type": "object",
+      "description": "TAXONOMY.md §CMP - draws exclusively on the CMP rubric's own vocabulary, never F/S taxonomy IDs.",
+      "required": [
+        "group", "winner_frame_id", "subject_placement", "edge_amputations",
+        "incidental_distractions"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "group": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 2,
+          "description": "frame_ids of the near-duplicate group compared, in batch order."
+        },
+        "winner_frame_id": {
+          "type": "string",
+          "description": "Must be one of group's frame_ids."
+        },
+        "subject_placement": { "type": "string", "minLength": 1 },
+        "edge_amputations": { "type": "string", "minLength": 1 },
+        "incidental_distractions": { "type": "string", "minLength": 1 },
+        "tiebreaker": {
+          "type": ["string", "null"],
+          "description": "Non-null only when a story element decided the winner over the three axes alone."
+        }
       }
     }
   }

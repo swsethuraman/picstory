@@ -25,6 +25,11 @@
       "type": "array",
       "items": { "$ref": "#/$defs/comparison" },
       "default": []
+    },
+    "rules": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/rule" },
+      "default": []
     }
   },
   "$defs": {
@@ -139,6 +144,16 @@
           "type": ["string", "null"],
           "description": "Non-null only when a story element decided the winner over the three axes alone."
         }
+      }
+    },
+    "rule": {
+      "type": "object",
+      "description": "TAXONOMY.md §R - forward-looking advice triggered by shooting conditions, not a per-frame finding. A different object type on purpose (see src/picstory/schema.py's Rule docstring).",
+      "required": ["taxonomy_id", "advice"],
+      "additionalProperties": false,
+      "properties": {
+        "taxonomy_id": { "$ref": "#/$defs/rRuleId" },
+        "advice": { "type": "string", "minLength": 1 }
       }
     }
   }

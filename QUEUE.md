@@ -31,3 +31,16 @@ BUILDER works top-down, one item per commit where feasible. Items marked `[block
 ---
 
 *Agent-proposed additions below this line, flagged `[agent-proposed]`.*
+
+13. `[agent-proposed]` R01 (Haze rule): implement as a real batch-level
+    conditional rule, replacing its `DetectorNotImplemented` stub. TAXONOMY.md
+    §R: "Trigger: Hazy / low-contrast conditions (detected via F12 findings in
+    the batch). Rule: Shoot tighter." Not a per-frame `Finding` (already
+    excluded from the per-frame sweep in `scripts/analyze.py` and from
+    `ranking.py`'s scoring/habit — see both modules' docstrings); needs its
+    own `AnalysisOutput` object type ("different object type for the
+    classifier," TAXONOMY.md §R) emitted once per batch when triggered.
+    Unblocked as of builder-012 (Stage 2's batch context, item 7, has existed
+    since builder-007 with nothing left gating this one). No DECISIONS.md
+    entry needed — unlike F14/S03 (D-005), R01's trigger condition (F12
+    present in the batch) is unambiguous from TAXONOMY.md's own text.

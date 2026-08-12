@@ -2,7 +2,7 @@
 
 D-nnn format, stable IDs. BUILDER writes here when blocked (question, options, recommendation, reasoning) and moves on. CRITIC may add entries and may not close them. Only the human writes rulings; rulings are appended, never rewritten. **At five open decisions, both routines halt and write HALT.md.**
 
-Open count: 0
+Open count: 1
 
 ---
 
@@ -116,3 +116,55 @@ Open count: 0
   (this settles the filtering question). Hand-authored shapes remain
   acceptable until a live call succeeds. If neither variable is visible in
   the session, fall back to option (b): the owner records fixtures locally.
+
+## D-007 · F14/S03: what grouping do "a location" and "batch-mates" actually mean?
+- **Question:** D-005 deferred F14 (Wide-shot monoculture) and S03 (Tight
+  framing) "until Stage 2 lands, then implement them properly against the
+  batch." Stage 2 (QUEUE.md items 7-10: batch input, F03 near-duplicate
+  grouping, ranking/shortlist, session habit) landed by builder-010, and
+  this session (builder-013) added item 13, R01, using that same batch
+  context. Checking what Stage 2 actually gave F14/S03 to use: nothing
+  matching either item's Detection text. F14's Detection text is "a
+  location's **coverage** is all establishing views" - a per-location
+  property, requiring frames to be grouped by *location*. S03's is "the
+  tightest frame of a subject **among its batch-mates**" - requiring frames
+  to be grouped by *subject*. Neither grouping exists anywhere in this
+  codebase: there is no GPS/location metadata reader, no location-clustering
+  logic, and no subject-identity grouping broader than F03's
+  `group_near_duplicates` (which groups on "no change in position, focal
+  length, or angle" - i.e. near-identical consecutive frames, deliberately
+  the *narrow* case TAXONOMY.md calls "copies, not variations," not the
+  broader "same subject, different angles/distances across the location"
+  reading either F14's "coverage" or S03's "batch-mates" would need). Using
+  F03's groups for either would answer a materially easier question ("does
+  the tightest of this *safety-copy burst* win" instead of "does the
+  tightest frame *of this subject anywhere in the batch* win") - the same
+  plausible-substitute shape D-005 already rejected for a per-frame proxy,
+  just one layer up: a too-narrow *group definition* rather than no group at
+  all.
+- **Options:** (a) Implement a real location-clustering signal for F14
+  (EXIF GPS lat/long if present, falling back to a documented no-GPS
+  behavior) and a real subject-clustering signal for S03 broader than F03's
+  near-duplicate hash (e.g. all frames sharing a location cluster, or a
+  wider perceptual-similarity threshold than F03's), each as new,
+  separately-tested grouping logic, then wire F14/S03 on top. (b) Reuse
+  F03's existing near-duplicate groups for both, explicitly disclosed as a
+  narrower-than-intended proxy (F14 → "no tight/eye-level frame within any
+  safety-copy burst"; S03 → "tightest frame within a safety-copy burst"),
+  labeled as a known limitation rather than presented as the taxonomy's full
+  claim. (c) Leave both stubbed (unchanged from D-005) until (a)'s
+  grouping infrastructure is deliberately scoped as its own QUEUE item,
+  rather than assumed to already exist because "Stage 2 landed."
+- **Recommendation:** (c), with (a) as the real follow-up work. D-005's own
+  reasoning ("a per-frame proxy under either item's real ID would
+  misclassify... worse than a stub that visibly says 'not yet
+  implemented'") applies just as directly to a too-narrow *group* as it did
+  to no group at all - (b) would tag frames F14/S03 based on a burst
+  grouping the Detection text does not describe, which is exactly the kind
+  of plausible substitute CRITIC checks for. Filed now rather than left
+  implicit because every builder session since builder-008 has logged "D-005
+  covers F14/S03" in its test-count note as if the deferral's precondition
+  were still unmet - it no longer is (Stage 2 exists), so the stubs are now
+  blocked on a genuine open question (what grouping to build) rather than on
+  waiting for Stage 2, and CLAUDE.md is explicit that this belongs in
+  DECISIONS.md rather than being quietly carried forward.

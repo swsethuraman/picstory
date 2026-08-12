@@ -36,6 +36,16 @@ it, move on") is logged as a `ComparisonRun("error", ...)` rather than
 crashing the batch, the same non-fatal treatment `_run_f03` already gives a
 broken F03 detector.
 
+R01 (item 13, TAXONOMY.md §R) runs after ranking/habit, over the same final
+per-frame findings (F03's merge included, same set `ranking.compute_habit`
+sees): `picstory.detectors.r01.detect` takes the batch's `FrameAnalysis`
+list (not raw frames - R01's trigger is "F12 findings in the batch," a
+property of already-computed findings, not something to re-derive from
+pixels) and returns a `schema.Rule` once if F12 was found anywhere,
+appended to `AnalysisOutput.rules` - a different object on the output from
+`frames`/`comparisons`, per TAXONOMY.md's "different object type for the
+classifier" framing of §R.
+
 The running profile (item 12, TAXONOMY.md's "The running profile" output row)
 is updated once per `main()` run: `picstory.profile.load_profile` reads
 whatever this user's machine has recorded so far, `profile.record_session`
@@ -62,10 +72,10 @@ from analyze import DetectorRun, evaluable_ids, run_analysis  # noqa: E402
 
 from picstory import cmp, detectors, profile as profile_module, ranking  # noqa: E402
 from picstory.batch import load_batch  # noqa: E402
-from picstory.detectors import f03  # noqa: E402
+from picstory.detectors import f03, r01  # noqa: E402
 from picstory.detectors.base import DetectorNotImplemented  # noqa: E402
 from picstory.frame import Frame  # noqa: E402
-from picstory.schema import AnalysisOutput, FrameAnalysis  # noqa: E402
+from picstory.schema import AnalysisOutput, FrameAnalysis, Rule  # noqa: E402
 
 
 @dataclass(frozen=True)
@@ -126,6 +136,23 @@ def _run_comparisons(
     return comparisons, comparison_runs
 
 
+def _run_r01(frame_analyses: list[FrameAnalysis], detector_lookup) -> Rule | None:
+    """Run the batch-level R01 rule once, over the batch's final findings.
+
+    Unlike F03/CMP, R01 has no network or spend dependency (it is a pure
+    check over already-computed findings - TAXONOMY.md's own trigger
+    condition, "F12 findings in the batch") and nothing that plausibly
+    raises in normal operation, so there is no stub/error status to
+    classify or report here (CLAUDE.md's "log it, move on" rule covers
+    spend-cap/network failures, neither of which applies to a local check).
+    `detector_lookup` is still threaded through rather than calling
+    `picstory.detectors.r01.detect` directly, so tests can inject a fake
+    registry the same way they do for every other ID.
+    """
+    detect_r01 = detector_lookup("R01")
+    return detect_r01(frame_analyses)
+
+
 def run_batch_analysis(
     frames: list[Frame],
     *,
@@ -143,7 +170,8 @@ def run_batch_analysis(
     regardless of `ids`, since it is not part of that sweep at all. Ranking
     (item 9) runs next, over the final per-frame findings (F03's merge
     included), so a safety-copy finding counts against its frame's score the
-    same as any other F-item would. CMP (item 11) runs last, over F03's own
+    same as any other F-item would. R01 (item 13) runs next, over the same
+    final findings (see `_run_r01`). CMP (item 11) runs last, over F03's own
     near-duplicate groups (`cmp_compare` injected the same way for tests -
     see `_run_comparisons`).
     """
@@ -173,8 +201,15 @@ def run_batch_analysis(
 
     pick = ranking.build_pick(frame_analyses)
     habit = ranking.compute_habit(frame_analyses)
+    rule = _run_r01(frame_analyses, detector_lookup)
     comparisons, comparison_runs = _run_comparisons(frames, cmp_compare)
-    output = AnalysisOutput(frames=frame_analyses, pick=pick, habit=habit, comparisons=comparisons)
+    output = AnalysisOutput(
+        frames=frame_analyses,
+        pick=pick,
+        habit=habit,
+        comparisons=comparisons,
+        rules=[rule] if rule is not None else [],
+    )
     return output, runs_by_frame, comparison_runs
 
 
@@ -250,6 +285,13 @@ def render_report(
         for comparison_run in comparison_runs or []:
             if comparison_run.status == "error":
                 lines.append(f"- {comparison_run.group} → error: {comparison_run.detail}")
+
+    lines += ["", "## Rules (TAXONOMY.md §R, forward-looking advice)", ""]
+    if not output.rules:
+        lines.append(f"(no rule triggered - no {r01.TRIGGER_ID} finding in this batch)")
+    else:
+        for rule in output.rules:
+            lines.append(f"- {rule.taxonomy_id}: {rule.advice}")
 
     lines += ["", "## Profile (per-user recurrence across sessions, this session included)", ""]
     if updated_profile is None:

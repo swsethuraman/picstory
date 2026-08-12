@@ -34,10 +34,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import analyze_batch  # noqa: E402
 
 from picstory.batch import MIN_BATCH_SIZE, load_batch  # noqa: E402
+from picstory.detectors import r01  # noqa: E402
 from picstory.detectors.base import DetectorNotImplemented  # noqa: E402
 from picstory.frame import Frame  # noqa: E402
 from picstory.profile import Profile, record_session  # noqa: E402
-from picstory.schema import Comparison, Finding, taxonomy_correction_text  # noqa: E402
+from picstory.schema import Comparison, Finding, taxonomy_correction_text, taxonomy_rule_text  # noqa: E402
 
 _focal_lengths = itertools.count(1)
 
@@ -55,8 +56,12 @@ def _no_f03_findings(frames):
     return {}
 
 
+def _no_r01_rule(frame_analyses):
+    return None
+
+
 def _lookup(table: dict[str, object]):
-    table = {"F03": _no_f03_findings, **table}
+    table = {"F03": _no_f03_findings, "R01": _no_r01_rule, **table}
     return lambda taxonomy_id: table[taxonomy_id]
 
 
@@ -338,6 +343,53 @@ def test_run_batch_analysis_comparison_failure_is_logged_not_fatal() -> None:
     assert "spend cap hit" in comparison_runs[0].detail
 
 
+# --- run_batch_analysis(): R01, the haze rule (item 13) --------------------
+
+
+def test_run_batch_analysis_no_rule_when_no_f12_finding() -> None:
+    lookup = _lookup({"F07": lambda frame: None})
+    frames = [_frame("00_a"), _frame("01_b")]
+
+    output, _runs, _comparison_runs = analyze_batch.run_batch_analysis(
+        frames, detector_lookup=lookup, ids=["F07"]
+    )
+
+    assert output.rules == []
+
+
+def test_run_batch_analysis_r01_triggers_on_f12_finding_anywhere_in_batch() -> None:
+    # Overrides the default no-op "R01" fake with the real detector, so this
+    # exercises `_run_r01` actually receiving the per-frame sweep's F12
+    # finding, not just a stub that would return None regardless.
+    def f12_on_second_frame(frame):
+        return Finding(taxonomy_id="F12", description="hazy") if frame.frame_id == "01_b" else None
+
+    lookup = _lookup({"F12": f12_on_second_frame, "F07": lambda frame: None, "R01": r01.detect})
+    frames = [_frame("00_a"), _frame("01_b")]
+
+    output, _runs, _comparison_runs = analyze_batch.run_batch_analysis(
+        frames, detector_lookup=lookup, ids=["F12", "F07"]
+    )
+
+    assert len(output.rules) == 1
+    assert output.rules[0].taxonomy_id == "R01"
+
+
+def test_run_batch_analysis_r01_uses_the_real_registered_detector_by_default() -> None:
+    # `run_batch_analysis`'s default `detector_lookup` is the real registry
+    # (`picstory.detectors.get`), not a test double - pins that R01 is wired
+    # up end to end, not only reachable through the fake-lookup tests above.
+    # `_frame()`'s all-zero pixel data is itself flat/hazy by F12's own
+    # metric (zero luminance spread), so the real F12 detector genuinely
+    # fires here and R01 should trigger off it - not a contrived double.
+    frames = [_frame("00_a"), _frame("01_b"), _frame("02_c")]
+
+    output, _runs, _comparison_runs = analyze_batch.run_batch_analysis(frames)
+
+    assert len(output.rules) == 1
+    assert output.rules[0].taxonomy_id == "R01"
+
+
 # --- render_report(): per-frame sections and aggregate counts -------------
 
 
@@ -410,6 +462,33 @@ def test_render_report_includes_comparison_error() -> None:
     )
 
     assert "error: RuntimeError: spend cap hit" in body
+
+
+def test_render_report_no_rule_triggered_line() -> None:
+    lookup = _lookup({"F07": lambda frame: None})
+    frames = [_frame("00_a"), _frame("01_b")]
+    output, runs_by_frame, _comparison_runs = analyze_batch.run_batch_analysis(
+        frames, detector_lookup=lookup, ids=["F07"]
+    )
+
+    body = analyze_batch.render_report([Path("a.jpg"), Path("b.jpg")], output, runs_by_frame)
+
+    assert "(no rule triggered - no F12 finding in this batch)" in body
+
+
+def test_render_report_includes_triggered_rule() -> None:
+    def f12_on_first_frame(frame):
+        return Finding(taxonomy_id="F12", description="hazy") if frame.frame_id == "00_a" else None
+
+    lookup = _lookup({"F12": f12_on_first_frame, "F07": lambda frame: None, "R01": r01.detect})
+    frames = [_frame("00_a"), _frame("01_b")]
+    output, runs_by_frame, _comparison_runs = analyze_batch.run_batch_analysis(
+        frames, detector_lookup=lookup, ids=["F12", "F07"]
+    )
+
+    body = analyze_batch.render_report([Path("a.jpg"), Path("b.jpg")], output, runs_by_frame)
+
+    assert f"- R01: {taxonomy_rule_text('R01')}" in body
 
 
 # --- render_report(): the Profile section (item 12) -----------------------

@@ -15,6 +15,7 @@ from picstory.schema import (
     FrameAnalysis,
     Habit,
     Pick,
+    Rule,
     SchemaError,
     cmp_rubric_text,
     taxonomy_correction_text,
@@ -22,6 +23,7 @@ from picstory.schema import (
     taxonomy_ids,
     taxonomy_ids_with_subpattern,
     taxonomy_reinforcement_text,
+    taxonomy_rule_text,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -358,3 +360,50 @@ def test_analysis_output_roundtrip_json_with_comparisons() -> None:
 
 def test_analysis_output_default_comparisons_empty() -> None:
     assert AnalysisOutput().comparisons == []
+
+
+def test_taxonomy_rule_text_matches_taxonomy_md_verbatim() -> None:
+    # Hand-transcribed from TAXONOMY.md §R - same drift guard style as the
+    # Reinforcement/Correction text tests above.
+    assert taxonomy_rule_text("R01") == (
+        "Shoot tighter. Tight frames suppress haze's flattening effect; the "
+        "tightest frames consistently ranked highest."
+    )
+
+
+def test_taxonomy_rule_text_missing_for_f_and_s_items() -> None:
+    # Only R-items have a Rule bullet - F-items have Correction, S-items have
+    # Reinforcement.
+    with pytest.raises(SchemaError):
+        taxonomy_rule_text("F12")
+    with pytest.raises(SchemaError):
+        taxonomy_rule_text("S01")
+
+
+def test_rule_rejects_non_r_item() -> None:
+    with pytest.raises(SchemaError):
+        Rule(taxonomy_id="F12", advice="shoot tighter")
+
+
+def test_rule_requires_non_empty_advice() -> None:
+    with pytest.raises(SchemaError):
+        Rule(taxonomy_id="R01", advice="")
+
+
+def test_rule_valid() -> None:
+    rule = Rule(taxonomy_id="R01", advice="shoot tighter")
+    assert rule.taxonomy_id == "R01"
+    assert Rule.from_dict(rule.to_dict()) == rule
+
+
+def test_analysis_output_default_rules_empty() -> None:
+    assert AnalysisOutput().rules == []
+
+
+def test_analysis_output_roundtrip_json_with_rules() -> None:
+    out = AnalysisOutput(
+        frames=[FrameAnalysis(frame_id="IMG_1.jpg")],
+        rules=[Rule(taxonomy_id="R01", advice="shoot tighter")],
+    )
+    round_tripped = AnalysisOutput.from_json(out.to_json())
+    assert round_tripped == out

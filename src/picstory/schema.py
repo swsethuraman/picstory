@@ -37,6 +37,10 @@ _CORRECTION_LINE = re.compile(
     r"^### (?P<id>[FSR]\d{2}) ·.*\n(?:^-.*\n)*?^- \*\*Correction:\*\* (?P<text>.+)$",
     re.MULTILINE,
 )
+_RULE_LINE = re.compile(
+    r"^### (?P<id>[FSR]\d{2}) ·.*\n(?:^-.*\n)*?^- \*\*Rule:\*\* (?P<text>.+)$",
+    re.MULTILINE,
+)
 _CMP_SECTION = re.compile(
     r"^## CMP — The three-frame comparison rubric\n\n(?P<text>.*?)\n\n---\n",
     re.MULTILINE | re.DOTALL,
@@ -128,6 +132,27 @@ def taxonomy_correction_text(taxonomy_id: str) -> str:
         return _correction_texts()[taxonomy_id]
     except KeyError:
         raise SchemaError(f"no Correction text found for taxonomy_id {taxonomy_id!r}") from None
+
+
+@lru_cache(maxsize=1)
+def _rule_texts() -> dict[str, str]:
+    text = _TAXONOMY_MD.read_text(encoding="utf-8")
+    return {m.group("id"): m.group("text").strip() for m in _RULE_LINE.finditer(text)}
+
+
+def taxonomy_rule_text(taxonomy_id: str) -> str:
+    """The exact Rule text for one R-item, parsed verbatim from TAXONOMY.md.
+
+    Same verbatim-source-of-truth reasoning as `taxonomy_correction_text`/
+    `taxonomy_reinforcement_text`. Only R-items carry a `- **Rule:**`
+    bullet (TAXONOMY.md §R: "Rules are triggered by shooting conditions,
+    not detected in frames ... they generate forward-looking advice");
+    F/S items raise.
+    """
+    try:
+        return _rule_texts()[taxonomy_id]
+    except KeyError:
+        raise SchemaError(f"no Rule text found for taxonomy_id {taxonomy_id!r}") from None
 
 
 @lru_cache(maxsize=1)
@@ -348,6 +373,35 @@ class Comparison:
 
 
 @dataclass
+class Rule:
+    """One triggered conditional rule (TAXONOMY.md §R): forward-looking advice, not a per-frame finding.
+
+    A different object type from `Finding` on purpose - TAXONOMY.md is
+    explicit that rules are "triggered by shooting conditions, not detected
+    in frames" and are a "different object type for the classifier." R01 is
+    the only R-item today; `advice` is its Rule text, read verbatim (same
+    single-source-of-truth reasoning as `Habit.description`).
+    """
+
+    taxonomy_id: str
+    advice: str
+
+    def __post_init__(self) -> None:
+        valid = taxonomy_ids()
+        if self.taxonomy_id not in valid or not self.taxonomy_id.startswith("R"):
+            raise SchemaError(f"rule taxonomy_id {self.taxonomy_id!r} must be an R-item ID")
+        if not self.advice or not self.advice.strip():
+            raise SchemaError("rule requires non-empty advice")
+
+    def to_dict(self) -> dict:
+        return {"taxonomy_id": self.taxonomy_id, "advice": self.advice}
+
+    @classmethod
+    def from_dict(cls, data: dict) -> Rule:
+        return cls(taxonomy_id=data["taxonomy_id"], advice=data["advice"])
+
+
+@dataclass
 class AnalysisOutput:
     """Top-level output of an analysis run: version, frames, pick, habit, comparisons."""
 
@@ -356,6 +410,7 @@ class AnalysisOutput:
     pick: Pick | None = None
     habit: Habit | None = None
     comparisons: list[Comparison] = field(default_factory=list)
+    rules: list[Rule] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if self.schema_version != SCHEMA_VERSION:
@@ -377,6 +432,7 @@ class AnalysisOutput:
             "pick": self.pick.to_dict() if self.pick is not None else None,
             "habit": self.habit.to_dict() if self.habit is not None else None,
             "comparisons": [c.to_dict() for c in self.comparisons],
+            "rules": [r.to_dict() for r in self.rules],
         }
 
     def to_json(self, **kwargs) -> str:
@@ -390,6 +446,7 @@ class AnalysisOutput:
             pick=Pick.from_dict(data["pick"]) if data.get("pick") else None,
             habit=Habit.from_dict(data["habit"]) if data.get("habit") else None,
             comparisons=[Comparison.from_dict(c) for c in data.get("comparisons", [])],
+            rules=[Rule.from_dict(r) for r in data.get("rules", [])],
         )
 
     @classmethod

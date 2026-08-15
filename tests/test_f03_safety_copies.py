@@ -144,6 +144,59 @@ def test_f03_safety_copies_empty_when_no_duplicates() -> None:
     assert f03.detect(frames) == {}
 
 
+def test_f03_safety_copies_no_keeper_context_falls_back_and_discloses_it() -> None:
+    """detect(frames) with no keeper_by_group at all (its original one-arg shape) is the
+    fallback path in full - no CMP context was ever supplied, so every run's Finding must
+    say so, not read as if CMP had actually ruled.
+    """
+    base = _scene(0)
+    frames = [_frame(base, "00_a"), _frame(_noisy(base, sigma=2, seed=1), "01_b")]
+
+    findings = f03.detect(frames)
+
+    assert "fallback-elected" in findings["01_b"].description
+    assert "00_a" in findings["01_b"].description
+
+
+# --- keeper election (DECISIONS.md D-008a) ------------------------------
+
+
+def test_f03_build_findings_uses_cmp_elected_keeper_not_position_1() -> None:
+    base = _scene(0)
+    frames = [_frame(base, "00_a"), _frame(_noisy(base, sigma=2, seed=1), "01_b")]
+    groups = f03.group_near_duplicates(frames)
+    assert groups == [["00_a", "01_b"]]
+
+    findings = f03.build_findings(groups, keeper_by_group={("00_a", "01_b"): "01_b"})
+
+    assert set(findings) == {"00_a"}  # CMP's winner, 01_b, is the keeper - unflagged
+    assert "01_b" in findings["00_a"].description
+    assert "fallback" not in findings["00_a"].description
+
+
+def test_f03_build_findings_falls_back_to_first_frame_for_a_run_missing_from_the_mapping() -> None:
+    """A group absent from keeper_by_group (CMP couldn't rule on it) still gets first-frame
+    election, but discloses the fallback - same standard as every other proxy in this codebase.
+    """
+    base = _scene(0)
+    frames = [_frame(base, "00_a"), _frame(_noisy(base, sigma=2, seed=1), "01_b")]
+    groups = f03.group_near_duplicates(frames)
+
+    findings = f03.build_findings(groups, keeper_by_group={})
+
+    assert set(findings) == {"01_b"}
+    assert "00_a" in findings["01_b"].description
+    assert "fallback-elected" in findings["01_b"].description
+
+
+def test_f03_build_findings_none_mapping_is_the_same_as_full_fallback() -> None:
+    base = _scene(0)
+    frames = [_frame(base, "00_a"), _frame(_noisy(base, sigma=2, seed=1), "01_b")]
+    groups = f03.group_near_duplicates(frames)
+
+    assert f03.build_findings(groups, None) == f03.build_findings(groups, {})
+
+
 # --- registration ------------------------------------------------------
 
 

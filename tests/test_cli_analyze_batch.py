@@ -22,6 +22,14 @@ group and exercise `cmp_compare`'s real default (`picstory.cmp.compare_group`,
 a live API call) in every test below that doesn't otherwise care about CMP.
 Tests that *do* want a near-duplicate group construct frames with matching
 FocalLength explicitly (see the CMP section).
+
+DECISIONS.md D-008a (keeper election): CMP now runs before F03's findings
+are merged, and `run_batch_analysis` always calls the looked-up F03 detector
+with a `keeper_by_group` kwarg (see analyze_batch.py's `_run_batch_level_findings`),
+so every F03 fake below takes `**_kwargs` even where the test doesn't care
+about the election itself. The "CMP over near-duplicate groups" section
+covers the election directly, including a case where CMP overturns
+position 1 (the capstone's own evidence for the ruling).
 """
 
 from __future__ import annotations
@@ -35,7 +43,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import analyze_batch  # noqa: E402
 
 from picstory.batch import MIN_BATCH_SIZE, load_batch  # noqa: E402
-from picstory.detectors import r01  # noqa: E402
+from picstory.detectors import f03, r01  # noqa: E402
 from picstory.detectors.base import DetectorNotImplemented  # noqa: E402
 from picstory.frame import Frame  # noqa: E402
 from picstory.profile import Profile, record_session  # noqa: E402
@@ -53,7 +61,7 @@ def _frame(frame_id: str, *, focal_length: float | None = None) -> Frame:
     return Frame(frame_id=frame_id, path=Path("."), rgb=np.zeros((4, 4, 3), dtype="uint8"), exif=exif)
 
 
-def _no_f03_findings(frames):
+def _no_f03_findings(frames, **_kwargs):
     return {}
 
 
@@ -149,7 +157,7 @@ def test_run_batch_analysis_habit_is_most_recurrent_f_or_s_item() -> None:
 def test_run_batch_analysis_habit_counts_f03_merged_findings() -> None:
     """The habit runs over the batch's *final* findings, F03's merge included."""
 
-    def f03_findings(frames):
+    def f03_findings(frames, **_kwargs):
         return {f.frame_id: Finding(taxonomy_id="F03", description="safety copy") for f in frames}
 
     lookup = _lookup({"F03": f03_findings, "F07": lambda frame: None})
@@ -165,7 +173,7 @@ def test_run_batch_analysis_habit_counts_f03_merged_findings() -> None:
 
 
 def test_run_batch_analysis_merges_f03_findings_into_flagged_frames_only() -> None:
-    def f03_findings(frames):
+    def f03_findings(frames, **_kwargs):
         # Mirrors picstory.detectors.f03.detect's shape: only the flagged
         # (non-keeper) frame_ids appear in the returned mapping.
         return {"01_b": Finding(taxonomy_id="F03", description="safety copy of '00_a'")}
@@ -192,7 +200,7 @@ def test_run_batch_analysis_merges_f03_findings_into_flagged_frames_only() -> No
 
 
 def test_run_batch_analysis_classifies_f03_stub_like_a_per_frame_stub() -> None:
-    def f03_stub(frames):
+    def f03_stub(frames, **_kwargs):
         raise DetectorNotImplemented("not yet")
 
     lookup = _lookup({"F07": lambda frame: None, "F03": f03_stub})
@@ -208,7 +216,7 @@ def test_run_batch_analysis_classifies_f03_stub_like_a_per_frame_stub() -> None:
 
 
 def test_run_batch_analysis_classifies_f03_error_like_a_per_frame_error() -> None:
-    def f03_broken(frames):
+    def f03_broken(frames, **_kwargs):
         raise RuntimeError("boom")
 
     lookup = _lookup({"F07": lambda frame: None, "F03": f03_broken})
@@ -258,7 +266,7 @@ def test_run_batch_analysis_picks_the_highest_scoring_frame() -> None:
 def test_run_batch_analysis_pick_disqualifiers_include_the_pick_s_own_f03_finding() -> None:
     """F03's batch-level merge happens before ranking, so it counts like any other F-item."""
 
-    def f03_findings(frames):
+    def f03_findings(frames, **_kwargs):
         return {"00_a": Finding(taxonomy_id="F03", description="safety copy of '01_b'")}
 
     lookup = _lookup({"F07": lambda frame: None, "F03": f03_findings})
@@ -347,6 +355,85 @@ def test_run_batch_analysis_comparison_failure_is_logged_not_fatal() -> None:
     assert len(comparison_runs) == 1
     assert comparison_runs[0].status == "error"
     assert "spend cap hit" in comparison_runs[0].detail
+
+
+# --- run_batch_analysis(): CMP elects the F03 keeper (DECISIONS.md D-008a) -
+
+
+def test_run_batch_analysis_cmp_winner_becomes_the_f03_keeper() -> None:
+    """CMP runs before F03 merges - its winner is unflagged, the loser gets the copy Finding."""
+    lookup = _lookup({"F07": lambda frame: None, "F03": f03.detect})
+    frames = [_frame("00_a", focal_length=24.0), _frame("01_b", focal_length=24.0)]
+
+    def fake_compare(group_frames):
+        return Comparison(
+            group=[f.frame_id for f in group_frames],
+            winner_frame_id="01_b",
+            subject_placement="x",
+            edge_amputations="x",
+            incidental_distractions="x",
+        )
+
+    output, _runs, _comparison_runs = analyze_batch.run_batch_analysis(
+        frames, detector_lookup=lookup, ids=["F07"], cmp_compare=fake_compare
+    )
+
+    by_id = {fa.frame_id: fa for fa in output.frames}
+    assert by_id["01_b"].findings == []  # CMP's winner is the keeper, unflagged
+    assert [f.taxonomy_id for f in by_id["00_a"].findings] == ["F03"]
+    assert "'01_b'" in by_id["00_a"].findings[0].description
+    assert "fallback" not in by_id["00_a"].findings[0].description
+
+
+def test_run_batch_analysis_cmp_overturns_position_1() -> None:
+    """The capstone's own evidence for D-008a: CMP judged frame 2, not frame 1, the keeper
+    in 2 of 3 real near-duplicate groups (docs/capstone-vienna-report.md, group
+    ['10_IMG_0961', '11_IMG_0962'], winner '11_IMG_0962'). Position 1 must not win by
+    default once CMP has actually ruled.
+    """
+    lookup = _lookup({"F07": lambda frame: None, "F03": f03.detect})
+    frames = [_frame("10_IMG_0961", focal_length=24.0), _frame("11_IMG_0962", focal_length=24.0)]
+
+    def fake_compare(group_frames):
+        return Comparison(
+            group=[f.frame_id for f in group_frames],
+            winner_frame_id="11_IMG_0962",
+            subject_placement="x",
+            edge_amputations="x",
+            incidental_distractions="x",
+        )
+
+    output, _runs, _comparison_runs = analyze_batch.run_batch_analysis(
+        frames, detector_lookup=lookup, ids=["F07"], cmp_compare=fake_compare
+    )
+
+    by_id = {fa.frame_id: fa for fa in output.frames}
+    assert by_id["11_IMG_0962"].findings == []
+    assert [f.taxonomy_id for f in by_id["10_IMG_0961"].findings] == ["F03"]
+    assert "'11_IMG_0962'" in by_id["10_IMG_0961"].findings[0].description
+
+
+def test_run_batch_analysis_f03_falls_back_to_first_frame_when_cmp_fails() -> None:
+    """D-008a's fallback: a CMP failure (network/spend-cap) still gets a keeper - position 1 -
+    but the Finding must disclose it was fallback-elected, not presented as CMP's verdict.
+    """
+    lookup = _lookup({"F07": lambda frame: None, "F03": f03.detect})
+    frames = [_frame("00_a", focal_length=24.0), _frame("01_b", focal_length=24.0)]
+
+    def broken_compare(group_frames):
+        raise RuntimeError("spend cap hit")
+
+    output, _runs, comparison_runs = analyze_batch.run_batch_analysis(
+        frames, detector_lookup=lookup, ids=["F07"], cmp_compare=broken_compare
+    )
+
+    assert comparison_runs[0].status == "error"
+    by_id = {fa.frame_id: fa for fa in output.frames}
+    assert by_id["00_a"].findings == []  # first-frame fallback keeper
+    assert [f.taxonomy_id for f in by_id["01_b"].findings] == ["F03"]
+    description = by_id["01_b"].findings[0].description
+    assert "'00_a'" in description
+    assert "fallback-elected" in description
 
 
 # --- run_batch_analysis(): R01, the haze rule (item 13) --------------------

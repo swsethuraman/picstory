@@ -192,3 +192,160 @@ Open count: 0
     post-experiment work.
   - Agreed that "D-005 covers F14/S03" is no longer an accurate citation;
     worklogs should cite D-007 from here forward.
+
+---
+
+*Provenance note: D-008a–D-009 are owner-authored (15 Aug 2026, post-experiment phase 2), not builder flags — the experiment's autonomous phase ended at builder-015. Question/options/recommendation are drafted by the owner from the capstone evidence (docs/capstone-vienna-report.md) and PICSTORY_SCORECARD.md; the format is kept so future sessions read these like any other entry.*
+
+## D-008a · F03/CMP keeper election: who decides which frame in a run is the keeper? — **RULED**
+- **Question:** The capstone run exposed a contradiction between F03 and CMP.
+  F03's convention (builder-008): the *first* frame of a near-duplicate run
+  is the keeper; later frames get the safety-copy Finding. CMP then judges
+  the same group on the rubric's axes — and in 2 of the capstone's 3 groups
+  (11 over 10, and 30 over 29), CMP's winner was a frame F03 had already
+  flagged as a copy. n=3 supports no rate claim, but it establishes the
+  convention is not deterministically right — and the mechanism is obvious
+  in hindsight: people often reshoot *because* the first frame had a
+  problem, so a later frame winning is an expected case, not an edge case.
+  Meanwhile safety-copy Findings count against `score_frame`, so the keeper
+  election directly shapes the ranking and the pick.
+- **Options:** (a) Keep first-frame-as-keeper; accept the occasional
+  contradiction as two independent opinions. (b) CMP elects the keeper:
+  F03 identifies runs only; no frame in a run carries an F03 Finding until
+  CMP has ruled; CMP's winner is the keeper, the losers get the copy
+  Finding. First-frame becomes the *fallback* keeper when CMP cannot rule.
+  (c) Drop the keeper concept; flag every frame in a run equally.
+- **Recommendation:** (b). (a) ships a known internal contradiction into
+  the pick; (c) disqualifies whole bursts wholesale, which the pick's
+  design already rejected (the best frame is often *in* the burst). (b)
+  makes the two mechanisms one pipeline: F03 finds, CMP judges.
+- **Ruling (15 Aug 2026, owner):** (b), with the sequencing consequences
+  stated as requirements, not left to discovery:
+  - `run_batch_analysis` must run CMP over each run *before* F03 Findings
+    are merged — reversing the current order (F03 merge currently precedes
+    comparisons). F03's `detect()` (or its batch-level wiring) takes the
+    per-run keeper election as input rather than assuming position 1.
+  - **Fallback:** when CMP cannot rule on a run — vision-call error, spend
+    cap, or any other failure — the first-frame convention applies, and
+    the resulting F03 Findings' descriptions must say the keeper was
+    fallback-elected (disclosed, same standard as every proxy).
+  - The copy Finding's description should name the elected keeper (it
+    already names a keeper today; only the election changes).
+  - Tests must cover both paths: CMP-elected keeper (including a case
+    where CMP overturns position 1, per the capstone evidence) and the
+    fallback.
+
+## D-008b · Ranking: should a named strength beat a clean-but-empty frame outright? — **RULED**
+- **Question:** The capstone pick came down to a tie at score 0:
+  16_IMG_0967 (S03 minus F08) versus 18_IMG_0969 (no findings at all).
+  Batch order broke the tie for 0967 — which matched the owner's own
+  preference. A previously-proposed rule ("a frame with any disqualifier
+  cannot outrank a clean frame at equal score") would have inverted this,
+  preferring *nothing wrong* over *something right* — which reinstates the
+  curation app the product exists to not be. The live question is the
+  inverse: should the strength win *outright* rather than by the luck of
+  batch order?
+- **Options:** (a) Keep pure `count(S) − count(F)` with batch-order ties.
+  (b) Keep the linear score, add S-count as the first tie-breaker:
+  at equal score, more named strengths wins; batch order only breaks
+  genuine ties after that. (c) Reweight strengths above flaws (e.g. S=2,
+  F=1) so the strength-bearing frame wins on score alone.
+- **Recommendation:** (b). It encodes exactly the principle the capstone
+  validated — at equal net craft, a frame with something *right* beats a
+  frame with merely nothing wrong — without inventing arithmetic the
+  taxonomy nowhere defines, which is (c)'s flaw and the same invented-
+  ordinal-scale move builder-005 correctly refused for recurrence.
+- **Ruling (15 Aug 2026, owner):** (b). At equal `count(S) − count(F)`,
+  higher `count(S)` ranks first; batch order remains the final,
+  documented tie-breaker. The capstone tie (0967 over 0969) becomes the
+  regression test: 0967 must now win by rule, not by order. Revisit only
+  as part of severity weighting (QUEUE phase-2 calibration) — if per-
+  finding severities ever exist, this tie-breaker may be subsumed and
+  this entry should be cited when that happens.
+
+## D-008c · The habit: most-frequent is the least informative — what replaces raw count? — **RULED**
+- **Question:** The capstone habit selected F05 — correct by builder-010's
+  raw-count rule (28 of 31 frames), and the least useful possible advice:
+  it describes the ultrawide lens, not the user. Three detectors (F05×28,
+  F06×27, F11×25) fired at base rate — 80 of 150 detections — and any
+  raw-count habit will always be captured by whichever of them tops the
+  batch. Meanwhile "you tilt up" (F08, 9 frames) is a fact about the
+  user's hands. The honest ledger stands: builder-010 implemented the
+  queue item's own words ("most-recurrent F/S item") faithfully; the
+  definition was the flaw. The ideal fix — surprise relative to the
+  user's own cross-session base rate — requires profile history that
+  mostly doesn't exist yet.
+- **Options:** (a) Keep raw count. (b) Batch-pervasiveness exclusion:
+  an ID that fired on more than a threshold share of the batch's frames
+  (proposed: >2/3) is classified *pervasive* — it describes the batch's
+  shooting conditions or equipment, not a per-frame choice — and is
+  excluded from habit selection; the habit is the most recurrent
+  *non-pervasive* F/S ID, existing tie-break unchanged. Pervasive
+  findings are not discarded: they may surface as a separate one-line
+  session note ("this batch: ultrawide throughout"), distinct from the
+  habit. (c) Full statistical informativeness (frequency relative to a
+  base rate) — requires either cross-user priors that don't exist or
+  profile depth that doesn't exist yet.
+- **Recommendation:** (b) now, (c) later. (b) is implementable today
+  without inventing statistics, and on the capstone data it selects F08
+  ("you tilt up," 9 frames) over F05/F06/F11 — precisely the outcome the
+  critique asked for. (c) is the right end state once the profile has
+  enough sessions to define the user's own base rate; it should arrive as
+  a future entry citing this one, not be improvised now.
+- **Ruling (15 Aug 2026, owner):** (b). Threshold 2/3, defined as a named,
+  documented constant with the reasoning in the selector's docstring —
+  and the capstone batch is the calibration fixture: F05/F06/F11 must
+  classify as pervasive on it, F08 must win the habit. The session note
+  for pervasive findings is approved as part of the same item (one line,
+  not a list, per the product spec). The profile's recurrence *store*
+  is unchanged — pervasiveness affects habit selection, not what gets
+  recorded. When profile depth permits a user-relative base rate,
+  reopen as a new D-item citing this ruling.
+
+## D-009 · Editing suggestions: the v1 scope excluded editing — the Check context requires it — **RULED**
+- **Question:** The product seed's v1 scope excluded "editing, filters,
+  any pixel manipulation." The Check surface (product spec v2 §2.5)
+  analyzes a photo that may have been taken days ago — a context where
+  "reshoot it" is not actionable and an edit *suggestion* ("the intruding
+  figure is in the right 8% — crop it out") is the only useful coaching.
+  Honoring the suggestion requires knowing, per taxonomy item, whether
+  the failure is post-fixable at all — a field the frozen taxonomy does
+  not carry. Complication: fixability is not static for every ID. F05 is
+  the proof case: pure ultrawide bowing is lens-correctable, but a
+  symmetric subject drifted off the optical center is capture-only — the
+  same ID, two fixabilities, decided by which failure the finding
+  actually describes.
+- **Options:** (a) Amend TAXONOMY.md (version bump) with a per-item
+  `- **Fixability:**` bullet — post-fixable / capture-only / conditional —
+  parsed verbatim like every other bullet, keeping the single source of
+  truth. The taxonomy freeze was an experiment-phase rule; the owner may
+  version it post-experiment, and the amendment discipline (a new bullet,
+  no rewording of existing text) preserves the frozen Detection/Correction
+  language every detector depends on. (b) A sidecar fixability mapping in
+  code — leaves the taxonomy untouched but creates the second source of
+  truth the whole architecture was built to prevent. (c) Ask the vision
+  model to judge fixability per finding at Check time with no taxonomy
+  grounding — a vague-prompt substitute by another name.
+- **Recommendation:** (a), with the conditional cases handled by the
+  machinery that already exists: `SubPatternSpec`. F05's Fixability reads
+  `conditional`, and its detector opts into a closed-vocabulary
+  sub-pattern (e.g. `bowing` / `off_center_drift`) exactly as F06 already
+  does for edges — the finding itself then carries which case applies,
+  enum-constrained, and the Check surface maps sub-pattern → fix. No new
+  mechanism; the profile's sub-pattern design generalizes as built.
+- **Ruling (15 Aug 2026, owner):** (a), as TAXONOMY.md **v1.2**, with
+  hard constraints: the amendment adds `- **Fixability:**` bullets (and,
+  where `conditional`, the sub-pattern vocabulary) and changes *no
+  existing text* — Detection, Correction, Reinforcement, Rule and
+  Profile-note bullets are byte-identical before and after; a test should
+  assert the parsed texts are unchanged across the version bump. Initial
+  assignments per the product spec v2 §2.5 (F08 straighten; F06/F07/F02
+  crop; F05 conditional per above; F11/F15/F04/F03 capture-only), each
+  derivable from the item's own Correction text — where it isn't
+  derivable, that item's Fixability is a question back to the owner, not
+  a guess. Performing edits remains out of scope permanently: suggestions
+  name what, where, and which tool, then hand off. The unfixable verdict
+  ("no edit saves this one") is in scope and required — an improvement
+  path that always exists is flattery, not coaching. Timestamp-switched
+  delivery (reshoot vs. edit) is product behavior, not taxonomy, and is
+  not part of this ruling.

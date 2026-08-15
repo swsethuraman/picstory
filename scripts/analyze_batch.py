@@ -27,17 +27,28 @@ from the top-ranked frame. The session habit (item 10) runs over the same
 final findings: `ranking.compute_habit` sets `AnalysisOutput.habit` to
 whichever F- or S-item recurs across the most frames.
 
-CMP (item 11, TAXONOMY.md §CMP) runs last, over the same near-duplicate
-groups F03 already identifies (`picstory.detectors.f03.group_near_duplicates`
-- a pure local computation, called here directly rather than through F03's
-own registered `detect()`, since that returns per-frame Findings, not the
-groups themselves). Each group is judged once via `picstory.cmp.compare_group`
+CMP (item 11, TAXONOMY.md §CMP) now runs *before* F03's findings are merged
+(DECISIONS.md D-008a), over the same near-duplicate groups F03 already
+identifies (`picstory.detectors.f03.group_near_duplicates` - a pure local
+computation, called here directly rather than through F03's own registered
+`detect()`, since that returns per-frame Findings, not the groups
+themselves). Each group is judged once via `picstory.cmp.compare_group`
 (injectable as `cmp_compare`, same test-injection pattern as `detector_lookup`)
 and the result appended to `AnalysisOutput.comparisons`. A group whose
 comparison call fails (network, spend cap - CLAUDE.md's spending rule: "log
 it, move on") is logged as a `ComparisonRun("error", ...)` rather than
 crashing the batch, the same non-fatal treatment `_run_batch_level_findings`
-already gives a broken F03/S03 detector.
+gives a broken F03/S03 detector.
+
+Per D-008a, CMP's own winner *is* the run's keeper: `_run_comparisons` also
+returns `keeper_by_group` (`{tuple(group_ids): winner_frame_id}`, only for
+groups CMP actually judged), which is threaded into the F03 finding pass via
+`_run_batch_level_findings`'s `extra_kwargs` so `picstory.detectors.f03.detect`
+receives it as `keeper_by_group=...`. A run CMP could not judge (error, or
+simply missing from the mapping) is absent from `keeper_by_group`, and
+`f03.detect` falls back to first-frame election for that run, disclosed in
+the resulting Finding's description (see `f03.py`'s own docstring) - exactly
+the fallback D-008a's ruling requires, not a silent behavior change.
 
 R01 (item 13, TAXONOMY.md §R) runs after ranking/habit, over the same final
 per-frame findings (F03/S03's merges included, same set `ranking.compute_habit`
@@ -89,7 +100,7 @@ class ComparisonRun:
 
 
 def _run_batch_level_findings(
-    taxonomy_id: str, frames: list[Frame], detector_lookup
+    taxonomy_id: str, frames: list[Frame], detector_lookup, extra_kwargs: dict | None = None
 ) -> tuple[dict[str, Finding], str | None, str | None]:
     """Run one batch-level, dict-of-Findings detector (F03 or S03) once.
 
@@ -101,10 +112,14 @@ def _run_batch_level_findings(
     try/except so a batch-level ID gets the same three-way outcome
     (detected/clean vs. stub vs. error) as every ID the per-frame loop
     already classifies.
+
+    `extra_kwargs` (default none) is forwarded to the looked-up `detect`
+    call - today only F03 uses this, to pass D-008a's `keeper_by_group`
+    election through without changing S03's call shape at all.
     """
     detect = detector_lookup(taxonomy_id)
     try:
-        return detect(frames), None, None
+        return detect(frames, **(extra_kwargs or {})), None, None
     except DetectorNotImplemented as exc:
         return {}, "stub", str(exc)
     except Exception as exc:  # noqa: BLE001 - a blocked detector is logged, not fatal
@@ -144,19 +159,25 @@ def _merge_batch_level_findings(
 
 def _run_comparisons(
     frames: list[Frame], cmp_compare
-) -> tuple[list, list[ComparisonRun]]:
+) -> tuple[list, list[ComparisonRun], dict[tuple[str, ...], str]]:
     """Run CMP over every near-duplicate group F03 identifies.
 
-    Returns `(comparisons, comparison_runs)`: `comparisons` are the
-    successful `schema.Comparison` results (destined for
+    Returns `(comparisons, comparison_runs, keeper_by_group)`: `comparisons`
+    are the successful `schema.Comparison` results (destined for
     `AnalysisOutput.comparisons`); `comparison_runs` names every attempted
     group's outcome, success or failure, for the report - mirroring
     `DetectorRun`'s detected/stub/error split, but per-group rather than
-    per-frame-per-ID since CMP is not a taxonomy-ID detector.
+    per-frame-per-ID since CMP is not a taxonomy-ID detector. `keeper_by_group`
+    (D-008a) maps each judged group's frame-id tuple to CMP's own
+    `winner_frame_id` - the run's elected keeper; a group whose comparison
+    call failed is simply absent, so `picstory.detectors.f03.detect` falls
+    back to first-frame election for that run (disclosed there, per D-008a's
+    ruling).
     """
     frames_by_id = {frame.frame_id: frame for frame in frames}
     comparisons = []
     comparison_runs: list[ComparisonRun] = []
+    keeper_by_group: dict[tuple[str, ...], str] = {}
     for group_ids in f03.group_near_duplicates(frames):
         group_frames = [frames_by_id[fid] for fid in group_ids]
         try:
@@ -170,7 +191,8 @@ def _run_comparisons(
         comparison_runs.append(
             ComparisonRun(group_ids, "compared", f"winner: {comparison.winner_frame_id}")
         )
-    return comparisons, comparison_runs
+        keeper_by_group[tuple(group_ids)] = comparison.winner_frame_id
+    return comparisons, comparison_runs, keeper_by_group
 
 
 def _run_r01(frame_analyses: list[FrameAnalysis], detector_lookup) -> Rule | None:
@@ -197,7 +219,7 @@ def run_batch_analysis(
     ids: list[str] | None = None,
     cmp_compare=cmp.compare_group,
 ) -> tuple[AnalysisOutput, dict[str, list[DetectorRun]], list[ComparisonRun]]:
-    """Run Stage 1's per-frame sweep over every frame in a batch, then F03/S03, ranking, and CMP.
+    """Run Stage 1's per-frame sweep, then CMP, F03/S03, ranking, and R01.
 
     `detector_lookup` is threaded through unchanged so tests can inject a
     fake registry exactly as `test_cli_analyze.py` does for the single-photo
@@ -205,13 +227,22 @@ def run_batch_analysis(
     `ids` (default `evaluable_ids()`, which already excludes F03/S03) governs
     only the per-frame sweep; F03 and S03 each always run once via
     `detector_lookup` regardless of `ids`, since neither is part of that
-    sweep at all. Ranking (item 9) runs next, over the final per-frame
-    findings (F03/S03's merges included), so a safety-copy or tight-framing
-    finding counts toward its frame's score the same as any other F-/S-item
-    would. R01 (item 13) runs next, over the same final findings (see
-    `_run_r01`). CMP (item 11) runs last, over F03's own near-duplicate
-    groups (`cmp_compare` injected the same way for tests - see
-    `_run_comparisons`).
+    sweep at all.
+
+    CMP (item 11) now runs *before* F03's findings are merged (DECISIONS.md
+    D-008a: CMP's winner is the run's elected keeper, not "position 1" by
+    default) - `_run_comparisons` returns `keeper_by_group` alongside the
+    comparisons themselves, and that mapping is handed to F03's detector via
+    `_run_batch_level_findings`'s `extra_kwargs`. A run CMP could not judge
+    is simply absent from `keeper_by_group`; `picstory.detectors.f03.detect`
+    falls back to first-frame election for that run, disclosed in the
+    resulting Finding (see f03.py). S03 is unaffected by any of this - its
+    own batch-level pass is untouched.
+
+    Ranking (item 9) runs next, over the final per-frame findings (F03/S03's
+    merges included), so a safety-copy or tight-framing finding counts
+    toward its frame's score the same as any other F-/S-item would. R01
+    (item 13) runs last, over the same final findings (see `_run_r01`).
     """
     ids = evaluable_ids() if ids is None else ids
     frame_analyses: list[FrameAnalysis] = []
@@ -221,8 +252,10 @@ def run_batch_analysis(
         frame_analyses.append(output.frames[0])
         runs_by_frame[frame.frame_id] = runs
 
+    comparisons, comparison_runs, keeper_by_group = _run_comparisons(frames, cmp_compare)
+
     f03_findings, f03_error_status, f03_error_detail = _run_batch_level_findings(
-        "F03", frames, detector_lookup
+        "F03", frames, detector_lookup, extra_kwargs={"keeper_by_group": keeper_by_group}
     )
     _merge_batch_level_findings(
         "F03", f03_findings, f03_error_status, f03_error_detail, frame_analyses, runs_by_frame
@@ -238,7 +271,6 @@ def run_batch_analysis(
     pick = ranking.build_pick(frame_analyses)
     habit = ranking.compute_habit(frame_analyses)
     rule = _run_r01(frame_analyses, detector_lookup)
-    comparisons, comparison_runs = _run_comparisons(frames, cmp_compare)
     output = AnalysisOutput(
         frames=frame_analyses,
         pick=pick,

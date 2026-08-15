@@ -2,7 +2,7 @@
 
 D-nnn format, stable IDs. BUILDER writes here when blocked (question, options, recommendation, reasoning) and moves on. CRITIC may add entries and may not close them. Only the human writes rulings; rulings are appended, never rewritten. **At five open decisions, both routines halt and write HALT.md.**
 
-Open count: 0
+Open count: 1
 
 ---
 
@@ -349,3 +349,47 @@ Open count: 0
   path that always exists is flattery, not coaching. Timestamp-switched
   delivery (reshoot vs. edit) is product behavior, not taxonomy, and is
   not part of this ruling.
+
+## D-010 · Habit calibration: does F08 actually win on the capstone batch, or does S01?
+- **Question:** QUEUE.md item 17(a) and D-008c's own ruling both name the
+  calibration fixture's required outcome explicitly: "F05/F06/F11 must
+  classify pervasive and F08 must win the habit." Implementing D-008c's
+  mechanism exactly as ruled — `PERVASIVE_THRESHOLD = 2/3`, "the habit is
+  the most recurrent *non-pervasive* F/S ID" — against the capstone
+  report's own per-ID frame counts (counted directly from
+  `docs/capstone-vienna-report.md`'s `[detected]` lines, id by id, summing
+  to the report's own header total of 150 detections across 31 frames —
+  not eyeballed) gives: F05 (28/31), F06 (27/31), F11 (25/31) all clear the
+  threshold and are correctly excluded, exactly as required. But the next
+  count down is not F08 — it's S01 at 20/31 (64.5%), *under* the 2/3
+  threshold (66.7%), so S01 stays eligible and outranks F08 (13/31) for
+  the habit. D-008c's own narrative text separately cites "F08, 9 frames"
+  — a count that does not match the report as it stands (F08 is 13 by
+  direct count) and that predates this session; S01 is not mentioned
+  anywhere in D-008c's narrative at all, despite being the second-highest
+  count in the batch after the three pervasive IDs. The mechanism itself
+  is unambiguous and was implemented exactly as ruled (`ranking.py`:
+  `PERVASIVE_THRESHOLD`, `pervasive_ids`, `pervasive_note`,
+  `compute_habit`'s exclusion); it is the fixture's *named expected
+  winner* that does not hold against the cited evidence.
+- **Options:** (a) Correct the calibration fixture's expected winner to
+  S01 — the honest result of applying the ruling's own stated mechanism to
+  the report's actual, verified counts. (b) Treat S01 as pervasive too
+  (e.g. lower the threshold below 64.5%, or a qualitative carve-out for
+  "human in the foreground" as a touristy-batch shooting pattern rather
+  than a per-frame choice) — not supported by the ">2/3" rule as literally
+  ruled, and would need its own justification rather than being reverse-
+  engineered to hit F08. (c) Re-derive "F08, 9 frames" from a counting
+  convention the ruling's text doesn't spell out (e.g. sessions rather
+  than frames, or some subset of F08's 13 occurrences) and reconcile it
+  with the report's own 13-count — unclear what that convention would be.
+- **Recommendation:** (a). The mechanism is implemented faithfully and
+  matches every part of the ruling that the actual data can verify
+  (F05/F06/F11 pervasive); only the named winner is inconsistent with the
+  cited evidence. This session's tests (`test_ranking.py`'s
+  `test_capstone_calibration_pervasiveness_and_actual_habit_winner`)
+  assert the honest, mechanism-derived result (habit = S01) rather than a
+  forced F08, with this discrepancy documented in the test itself and
+  here — not silently overriding the ruling's stated outcome, per
+  CLAUDE.md's "nothing answers its own decision."
+- **Ruling:** (pending)

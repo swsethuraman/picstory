@@ -24,8 +24,15 @@ F03/S03's merges have produced the batch's final findings, `picstory.ranking`
 scores every frame (S-item findings for, F-item findings against - see that
 module's docstring for why) and `run_batch_analysis` sets `AnalysisOutput.pick`
 from the top-ranked frame. The session habit (item 10) runs over the same
-final findings: `ranking.compute_habit` sets `AnalysisOutput.habit` to
-whichever F- or S-item recurs across the most frames.
+final findings: `ranking.compute_habit` sets `AnalysisOutput.habit` to the
+most-recurrent *non-pervasive* F- or S-item (DECISIONS.md D-008c, QUEUE.md
+item 17a - an ID firing on more than `ranking.PERVASIVE_THRESHOLD` of the
+batch is excluded from habit selection, since it describes the batch's
+equipment or conditions rather than a per-frame choice). `render_report`
+surfaces any excluded pervasive IDs as one disclosed line
+(`ranking.pervasive_note`), distinct from the habit line. `rank_frames`
+itself now breaks a same-score tie toward more named S-item strengths before
+falling back to batch order (DECISIONS.md D-008b, item 17b).
 
 CMP (item 11, TAXONOMY.md §CMP) now runs *before* F03's findings are merged
 (DECISIONS.md D-008a), over the same near-duplicate groups F03 already
@@ -316,6 +323,11 @@ def render_report(
             if output.habit is not None
             else "habit: None (no F- or S-item finding recurred across the batch)"
         ),
+    ]
+    pervasive_line = ranking.pervasive_note(output.frames)
+    if pervasive_line is not None:
+        lines.append(pervasive_line)
+    lines += [
         "",
         "## Shortlist (ranked, best score first; ties keep batch order)",
         "",

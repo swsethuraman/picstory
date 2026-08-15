@@ -38,7 +38,7 @@ Every script writes its full output to `outputs/reports/` and prints **at most t
 
 ## Hard stop
 
-Enforced by `scripts/check_hard_stop.py`, run at the start of every session: if `logs/` holds 20 builder worklogs, or the date is past 22 August 2026, it writes `HALT.md` and exits nonzero. `HALT.md` present means stop, in every session, for every role.
+Enforced by `scripts/check_hard_stop.py`, run at the start of every session: if `logs/` holds 25 builder worklogs, or the date is past 29 August 2026, it writes `HALT.md` and exits nonzero. `HALT.md` present means stop, in every session, for every role. (Extended from 20 worklogs / 22 August by the owner, 15 Aug 2026, for phase 2 — real-photo hardening, QUEUE.md Stage 5.)
 
 ## The design constraint that governs everything
 

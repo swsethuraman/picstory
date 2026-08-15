@@ -1,5 +1,5 @@
 # PICSTORY — Stage 0: The Taxonomy
-### Closed list, v1.1 — FROZEN 9 August 2026
+### Closed list, v1.2 — 15 August 2026 (v1.1 frozen 9 August 2026)
 
 Everything downstream classifies into this list. Detection descriptions are written generically — they are what the classifier matches against. Trip examples are illustrations only. IDs are stable and never reused.
 
@@ -24,6 +24,7 @@ Item counts: 15 failure modes, 4 strengths, 1 conditional rule, 1 comparison rub
 - **Polarity:** −
 - **Detection:** Fine detail (stonework, texture, edges) visibly soft in tight frames; focal length metadata or rendering consistent with digital zoom beyond the device's optical steps.
 - **Correction:** Stay at true optical focal lengths (1x / 2x / 5x). Need tighter? Move closer, or crop in edit.
+- **Fixability:** capture-only — sharpening cannot restore detail that was never captured; the Correction's "crop in edit" is the alternative to zooming next time, not a repair of this frame.
 - **Example:** The three Rathaus tower duplicates, all soft.
 - **Recurrence in source:** Most architectural batches.
 
@@ -31,6 +32,7 @@ Item counts: 15 failure modes, 4 strengths, 1 conditional rule, 1 comparison rub
 - **Polarity:** −
 - **Detection:** Dark, out-of-focus mass along a frame edge, typically consistent across consecutive frames; a finger, case edge, or strap.
 - **Correction:** Wipe the lens and check all preview edges before shooting. (Grip problem, fixed *before* composing — distinct from F05.)
+- **Fixability:** post-fixable (crop) — when the obstruction sits at the edge, crop it out; deep intrusions may leave too little frame, in which case say so.
 - **Example:** Right-edge intrusion recurring across three Vienna batches.
 - **Recurrence in source:** ≥3 batches.
 
@@ -38,6 +40,7 @@ Item counts: 15 failure modes, 4 strengths, 1 conditional rule, 1 comparison rub
 - **Polarity:** −
 - **Detection:** 2–5 consecutive frames of the same subject with no change in position, focal length, or angle. Copies, not variations.
 - **Correction:** One frame, then deliberately change something — move ten feet, crouch, switch focal length. Come home with four pictures, not four copies.
+- **Fixability:** capture-only — the failure is in the set, not the pixels; no edit turns copies into variations.
 - **Example:** Rathaus tower ×3, Stephansdom portrait setup ×5.
 - **Recurrence in source:** Nearly every batch.
 
@@ -45,6 +48,7 @@ Item counts: 15 failure modes, 4 strengths, 1 conditional rule, 1 comparison rub
 - **Polarity:** −
 - **Detection:** Faces stretched toward frame edges; near limbs exaggerated; typical of ultrawide (0.5x) selfies and close subjects off-center.
 - **Correction:** Switch to 1x for people; hold the phone slightly above eye level.
+- **Fixability:** capture-only — geometric distortion of faces and limbs is not honestly repairable in edit; it was decided by the lens and distance when the button was pressed.
 - **Example:** Couple selfies, "near arm looks enormous."
 - **Recurrence in source:** Multiple batches.
 
@@ -52,6 +56,7 @@ Item counts: 15 failure modes, 4 strengths, 1 conditional rule, 1 comparison rub
 - **Polarity:** −
 - **Detection:** Curved or skewed lines on ceilings and symmetric architecture when the subject drifts off the ultrawide's center.
 - **Correction:** On the ultrawide, keep symmetric subjects centered.
+- **Fixability:** conditional — sub-pattern decides: `bowing` (curved lines with the subject centered) is post-fixable via lens/geometry correction; `off_center_drift` (the subject placed off the ultrawide's center) is capture-only — correction tools cannot recompose the frame.
 - **Example:** Interior ceilings.
 - **Recurrence in source:** Multiple interior batches.
 
@@ -59,6 +64,7 @@ Item counts: 15 failure modes, 4 strengths, 1 conditional rule, 1 comparison rub
 - **Polarity:** −
 - **Detection:** Unintended elements at frame edges — strangers' shoulders, half-cropped figures, flags, banners, labels cut mid-word, construction, brackets — while the primary subject is carefully centered. The tell: center chosen, edges unchosen.
 - **Correction:** Sweep all four edges before pressing the shutter. Commit fully: a whole label or none. Crop as salvage.
+- **Fixability:** post-fixable (crop) — the Correction's own "crop as salvage"; the capture fix (sweep the edges) remains the coaching.
 - **Profile note:** Directional sub-patterns (e.g. a right-third or left-edge blind spot) are per-user traits tracked by the profile, not separate taxonomy items.
 - **Example:** Vienna right-third pattern; Budapest left-edge menu boards across multiple nights.
 - **Recurrence in source:** The single most frequent finding — "20–30% of the frame left to something you didn't choose."
@@ -67,6 +73,7 @@ Item counts: 15 failure modes, 4 strengths, 1 conditional rule, 1 comparison rub
 - **Polarity:** −
 - **Detection:** 30–50% of the frame given to featureless area — blank sky, dead pavement, empty floor — with no compositional role.
 - **Correction:** Before shooting: tilt or rotate to fill the dead zone with something chosen. After: crop to 4:5 or 16:9 from the empty side.
+- **Fixability:** post-fixable (crop) — the Correction's own "crop to 4:5 or 16:9 from the empty side."
 - **Example:** Sphinx shots "far too much empty blue sky"; rotating ~30° to swap dead floor for sofas and orchids.
 - **Recurrence in source:** Through-line across both cities.
 
@@ -74,6 +81,7 @@ Item counts: 15 failure modes, 4 strengths, 1 conditional rule, 1 comparison rub
 - **Polarity:** − (when unintentional)
 - **Detection:** Vertical structures visibly leaning; parallel lines converging upward; worst on tight crops of tall subjects shot from below.
 - **Correction:** Step back and shoot straighter where possible; fix small cases with perspective tools in edit.
+- **Fixability:** post-fixable (straighten/perspective) — the Correction's own "fix small cases with perspective tools in edit"; severe convergence loses frame area to the correction, in which case say so.
 - **Example:** Old Town Hall series; "you shot up at everything."
 - **Recurrence in source:** Multiple architectural batches.
 
@@ -81,6 +89,7 @@ Item counts: 15 failure modes, 4 strengths, 1 conditional rule, 1 comparison rub
 - **Polarity:** −
 - **Detection:** Person in the foreground a stop or more dark, or unintentionally silhouetted, because metering favored a brighter background (lit landmark, sky, window).
 - **Correction:** Tap on the face to set exposure for the person.
+- **Fixability:** post-fixable (exposure/shadow lift) — a stop of shadow recovery is routinely available on phone captures, at some noise cost; deep silhouettes are capture-only, in which case say so.
 - **Example:** Stephansdom portraits; recurring Budapest night-shot pattern.
 - **Recurrence in source:** Night/interior batches in both cities.
 
@@ -88,6 +97,7 @@ Item counts: 15 failure modes, 4 strengths, 1 conditional rule, 1 comparison rub
 - **Polarity:** −
 - **Detection:** Highlights clipped to pure white with no recoverable detail — light sources, lit glass, bright sky reading as featureless blobs.
 - **Correction:** Drag the exposure slider down before the shutter to hold highlight detail.
+- **Fixability:** capture-only — the Detection text itself says it: clipped to pure white with no recoverable detail. Nothing to lift.
 - **Example:** The lantern glass.
 - **Recurrence in source:** Night/interior batches.
 
@@ -95,6 +105,7 @@ Item counts: 15 failure modes, 4 strengths, 1 conditional rule, 1 comparison rub
 - **Polarity:** −
 - **Detection:** In-focus bystanders or photobombers behind the subject; strong background lines (bars, edges, vanishing points) running through heads; crowd clutter competing with the person.
 - **Correction:** Portrait mode at 2x for people in complex interiors; half a step forward to clear background lines; have the subject walk ahead of the crowd.
+- **Fixability:** capture-only — the background is behind the subject; no honest crop removes it without removing the person.
 - **Example:** Grille bar through heads; bystander looking into the lens.
 - **Recurrence in source:** Core recurring finding.
 
@@ -102,6 +113,7 @@ Item counts: 15 failure modes, 4 strengths, 1 conditional rule, 1 comparison rub
 - **Polarity:** −
 - **Detection:** Low-contrast, washed-out distant subjects and flat skies from atmospheric haze; sharpening does not help.
 - **Correction:** In edit: lift contrast, pull blacks down. In the field: apply R01.
+- **Fixability:** post-fixable (contrast/blacks) — the Correction's own "in edit: lift contrast, pull blacks down"; heavy haze recovers only partially, in which case say so.
 - **Example:** Belvedere spire set, "all four hazy and flat."
 - **Recurrence in source:** Most outdoor Vienna batches.
 
@@ -109,6 +121,7 @@ Item counts: 15 failure modes, 4 strengths, 1 conditional rule, 1 comparison rub
 - **Polarity:** −
 - **Detection:** Large subject with nothing indicating its size; the set reads as "one idea repeated," a record rather than an experience.
 - **Correction:** Include a figure — at the base, or silhouetted looking up. Presence and gaze direction matter more than exposure on the figure.
+- **Fixability:** capture-only — no edit adds a person who was not there.
 - **Example:** The arcade sphere — the note that triggered the reshoot; the silhouetted-figure reshoot became the best photo of the trip.
 - **Recurrence in source:** Flagged across multiple batches as a structural gap.
 
@@ -116,6 +129,7 @@ Item counts: 15 failure modes, 4 strengths, 1 conditional rule, 1 comparison rub
 - **Polarity:** −
 - **Detection:** A location's coverage is all establishing views — no tight detail study, no eye-level frames.
 - **Correction:** At every location, deliberately add tight detail frames and at least one eye-level composition.
+- **Fixability:** capture-only — the failure is in the location's coverage as a set; no edit of any single frame supplies the missing tight or eye-level frames.
 - **Example:** "Lots of wide, nothing tight"; the stained-glass-on-black shot, when finally taken, ranked among the trip's best.
 - **Recurrence in source:** Repeatedly flagged; confirmed by its inverse.
 
@@ -123,6 +137,7 @@ Item counts: 15 failure modes, 4 strengths, 1 conditional rule, 1 comparison rub
 - **Polarity:** −
 - **Detection:** Person placed on the composition's focal spot (dead center, vanishing point) so subject and landmark fight for the same position; or landmark half-amputated by the edge behind a portrait.
 - **Correction:** Person in a third; landmark fully over a shoulder, never cut by the edge.
+- **Fixability:** capture-only — a crop cannot move the person off the focal spot or restore an amputated landmark.
 - **Example:** Stephansdom portrait setups; hotel exteriors.
 - **Recurrence in source:** Multiple portrait setups.
 
@@ -201,6 +216,7 @@ The taxonomy is closed at runtime and amended only by versioned human edit. The 
 
 ## Changelog
 
+- **v1.2 (15 Aug 2026):** Added a `- **Fixability:**` bullet to every F-item per DECISIONS.md D-009's ruling — values: post-fixable (with the edit named), capture-only, or conditional (F05, resolved per-finding by sub-pattern: `bowing` / `off_center_drift`). Each value is derived from the item's own Detection/Correction text; no existing bullet text changed — Detection, Correction, Reinforcement, Rule, Profile-note and CMP text are byte-identical to v1.1 (guarded by test per QUEUE item 18). S-items, R-items and CMP intentionally carry no Fixability — strengths need no fix, rules and the rubric are not per-frame findings. Owner edit; TAXONOMY.md remains agent-read-only.
 - **v1.1 (9 Aug 2026):** Frozen and renamed TAXONOMY.md for the autonomous build experiment. Read-only from this point; unimplementable items become DECISIONS.md entries, never rewordings.
 - **v1.1-draft (7 Aug 2026):** Added section U — the unclassified bucket, the one-field schema requirement, the human-reviewed expansion process, and the expected domain-shaped first expansion wave. Added the agent standing rule on taxonomy edits.
 - **v1.0-draft (7 Aug 2026):** Formalized from the draft inventory. A8 split into F09/F10. A4 split into F04/F05 (people vs. geometry — different corrections). A2/A5 kept separate as F02/F06 (grip vs. attention). Edge-direction sub-patterns moved to profile layer. Strengths promoted to first-class S-items. Haze rule extracted to R01. B4 promoted to the CMP rubric. Detection text rewritten generically; trip examples retained as illustrations.

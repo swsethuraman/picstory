@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 HALT = ROOT / "HALT.md"
 LOGS = ROOT / "logs"
 HARD_DATE = date(2026, 8, 22)
-MAX_BUILDER_SESSIONS = 20
+MAX_BUILDER_SESSIONS = 25
 
 
 def main() -> int:

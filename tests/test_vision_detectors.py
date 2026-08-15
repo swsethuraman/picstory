@@ -102,6 +102,57 @@ def _detect_fn(taxonomy_id: str):
     return detectors.get(taxonomy_id)
 
 
+# --- _encode_jpeg(): its own upload ceiling (QUEUE.md item 15c) -----------
+# Defense in depth, independent of frame.py's working-resolution contract -
+# see _vision.py's module-level constants' docstring for why this module
+# does not simply trust `Frame.rgb` to already be small.
+
+
+def test_encode_jpeg_resizes_a_frame_above_the_upload_ceiling() -> None:
+    from picstory.detectors._vision import _MAX_UPLOAD_DIM, _encode_jpeg
+    from PIL import Image
+    import io
+
+    oversized = np.zeros((1600, 2200, 3), dtype=np.uint8)
+    oversized[:, :, 0] = np.linspace(0, 255, 2200, dtype=np.uint8)[None, :]
+    frame = Frame(frame_id="big", path=Path("."), rgb=oversized, exif={})
+
+    encoded = _encode_jpeg(frame)
+    decoded = Image.open(io.BytesIO(encoded))
+
+    assert max(decoded.width, decoded.height) <= _MAX_UPLOAD_DIM
+
+
+def test_encode_jpeg_leaves_a_small_frame_at_full_size() -> None:
+    from picstory.detectors._vision import _MAX_UPLOAD_DIM, _encode_jpeg
+    from PIL import Image
+    import io
+
+    small = np.zeros((300, 400, 3), dtype=np.uint8)
+    frame = Frame(frame_id="small", path=Path("."), rgb=small, exif={})
+
+    encoded = _encode_jpeg(frame)
+    decoded = Image.open(io.BytesIO(encoded))
+
+    assert (decoded.width, decoded.height) == (400, 300)
+    assert max(decoded.width, decoded.height) < _MAX_UPLOAD_DIM
+
+
+def test_encode_jpeg_never_exceeds_the_payload_byte_ceiling() -> None:
+    from picstory.detectors._vision import _MAX_PAYLOAD_BYTES, _encode_jpeg
+
+    # High-entropy noise is the worst case for JPEG's compressibility - the
+    # kind of content most likely to blow past a byte ceiling at fixed
+    # quality if the quality-reduction fallback didn't work.
+    rng = np.random.default_rng(0)
+    noisy = rng.integers(0, 256, size=(1500, 1500, 3), dtype=np.uint8)
+    frame = Frame(frame_id="noisy", path=Path("."), rgb=noisy, exif={})
+
+    encoded = _encode_jpeg(frame)
+
+    assert len(encoded) <= _MAX_PAYLOAD_BYTES
+
+
 # --- per-ID wiring: positive, negative, and detection-text fidelity -----
 
 

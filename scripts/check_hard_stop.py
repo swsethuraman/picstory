@@ -2,8 +2,14 @@
 
 Writes HALT.md and exits nonzero if:
   - HALT.md already exists, or
-  - logs/ holds >= 20 builder worklogs (builder-*.md), or
-  - today's date is past 2026-08-22.
+  - logs/ holds >= 25 builder worklogs (builder-*.md), or
+  - today's date is past 2026-08-29.
+
+Per CLAUDE.md's "Hard stop" section: extended from 20 worklogs / 22 August
+by the owner, 15 Aug 2026, for phase 2 (real-photo hardening, QUEUE.md
+Stage 5). MAX_BUILDER_SESSIONS was updated with that ruling;
+HARD_DATE was not, until builder-016 caught the mismatch against CLAUDE.md's
+own current text - fixed here rather than left to drift further.
 
 Per PREDICTION.md: do not rescue a stall. The stall is the finding.
 """
@@ -17,7 +23,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 HALT = ROOT / "HALT.md"
 LOGS = ROOT / "logs"
-HARD_DATE = date(2026, 8, 22)
+HARD_DATE = date(2026, 8, 29)
 MAX_BUILDER_SESSIONS = 25
 
 

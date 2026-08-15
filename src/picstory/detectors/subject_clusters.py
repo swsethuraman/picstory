@@ -30,7 +30,7 @@ flagged F03's version.
 
 from __future__ import annotations
 
-from picstory.detectors._imaging import difference_hash, hamming_distance
+from picstory.detectors._imaging import hamming_distance
 from picstory.frame import Frame
 
 HASH_SIZE = 8
@@ -48,7 +48,10 @@ HASH_DISTANCE_THRESHOLD = 15
 
 
 def _frame_hash(frame: Frame):
-    return difference_hash(frame.luminance, hash_size=HASH_SIZE)
+    # QUEUE.md item 15b: same HASH_SIZE (8) as f03.py's own hash, so this
+    # reuses the memoized `Frame.dhash` entry F03 already populated for the
+    # same frame in the same batch run, rather than recomputing it.
+    return frame.dhash(hash_size=HASH_SIZE)
 
 
 def group_subject_clusters(frames: list[Frame]) -> list[list[str]]:

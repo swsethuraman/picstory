@@ -50,7 +50,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from picstory.detectors._imaging import difference_hash, hamming_distance
+from picstory.detectors._imaging import hamming_distance
 from picstory.detectors.base import register
 from picstory.frame import Frame
 from picstory.schema import Finding
@@ -68,7 +68,11 @@ _EXIF_TIMESTAMP_FORMAT = "%Y:%m:%d %H:%M:%S"
 
 
 def _frame_hash(frame: Frame):
-    return difference_hash(frame.luminance, hash_size=HASH_SIZE)
+    # QUEUE.md item 15b: memoized on the Frame itself, so CMP's own
+    # re-grouping (scripts/analyze_batch.py's `_run_comparisons` calls
+    # `group_near_duplicates` a second time over the same frames) reuses
+    # this batch's already-computed hashes instead of recomputing them.
+    return frame.dhash(hash_size=HASH_SIZE)
 
 
 def _focal_length_mm(frame: Frame) -> float | None:

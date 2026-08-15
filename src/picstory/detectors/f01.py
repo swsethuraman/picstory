@@ -22,6 +22,27 @@ If `DigitalZoomRatio` is absent from EXIF, the metadata signal can't be
 evaluated at all - this detector returns no finding rather than guessing
 from softness alone, since a soft photo with no zoom metadata is equally
 consistent with several other failure modes this taxonomy tracks separately.
+
+Resolution note (QUEUE.md item 15f): unlike F02/F08/S03, this detector does
+not call `_imaging.downsample` itself - it reads `sharpness_score` straight
+off `frame.luminance` at whatever resolution `Frame.rgb` already is (working
+resolution, per `frame.WORKING_RESOLUTION_MAX_DIM`), because downsampling
+further would erase exactly the fine detail F01 is checking for softness
+in. Checked directly against `WORKING_RESOLUTION_MAX_DIM`-scale synthetic
+fixtures (`tests/test_frame.py`): variance-of-Laplacian is driven by local
+pixel-to-pixel contrast at a texture's own pixel period, not by total image
+size, so a fixed-period test pattern scores the same at 200px as at 2000px
+(confirmed: ~24000 sharp / ~660 soft at both sizes) and SOFT_THRESHOLD holds
+without adjustment. The real limitation this doesn't fix: `load_frame`'s
+working-resolution downsample can itself anti-alias away native-resolution
+texture finer than ~1-2px at working scale - detail that would have
+registered as "sharp" at native resolution may simply not survive the
+resize, regardless of whether the original zoom was soft. F01 can therefore
+undercount digital-zoom softness on very fine native detail; it has no way
+to distinguish "softened by the zoom" from "softened by our own
+downsample" once both have happened. Not correctable without the
+native-resolution crop escape hatch `frame.Frame.path` documents - not
+exercised here, since no case demonstrating the need has arisen yet.
 """
 
 from __future__ import annotations

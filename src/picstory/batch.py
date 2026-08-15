@@ -15,6 +15,10 @@ Per-frame *analysis* (the rest of item 7 - "per-frame analysis reusing Stage
 Near-duplicate grouping (F03, item 8), ranking/shortlist (item 9), and the
 session habit (item 10) are later queue items and are out of scope for this
 module.
+
+QUEUE.md item 15 (the resolution contract): each `Frame` this returns is
+already decoded at working resolution - `load_frame` (`frame.py`) owns that
+downsample, this module just calls it once per path in order.
 """
 
 from __future__ import annotations

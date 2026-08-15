@@ -134,10 +134,42 @@ def _prompt(taxonomy_id: str, detection_text: str, sub_pattern: SubPatternSpec |
     )
 
 
+# QUEUE.md item 15c: this module's own ceiling on what it will ever upload,
+# independent of `frame.WORKING_RESOLUTION_MAX_DIM` (frame.py). Defense in
+# depth, not a substitute for that contract - `Frame.rgb` should already be
+# at working resolution by the time it reaches here, but this function does
+# not trust that as its only guarantee against an oversized payload (e.g. a
+# future caller building a `Frame` some other way).
+_MAX_UPLOAD_DIM = 1500
+_JPEG_QUALITY = 85
+_MAX_PAYLOAD_BYTES = 4 * 1024 * 1024  # comfortably under Anthropic's per-image request limit
+
+
 def _encode_jpeg(frame: Frame) -> bytes:
-    buf = io.BytesIO()
-    Image.fromarray(frame.rgb).save(buf, format="JPEG", quality=90)
-    return buf.getvalue()
+    """JPEG-encode a frame for upload, capped at `_MAX_UPLOAD_DIM`/`_MAX_PAYLOAD_BYTES`.
+
+    Resizes down (never up) if the frame exceeds `_MAX_UPLOAD_DIM` on its
+    long edge, then re-encodes at progressively lower JPEG quality if the
+    result still exceeds `_MAX_PAYLOAD_BYTES` - a hard byte ceiling, not
+    just a size hint, so this function can never hand the API an
+    unboundedly large payload regardless of what resolution `frame.rgb`
+    arrives at.
+    """
+    image = Image.fromarray(frame.rgb)
+    long_edge = max(image.width, image.height)
+    if long_edge > _MAX_UPLOAD_DIM:
+        scale = _MAX_UPLOAD_DIM / long_edge
+        new_size = (max(1, round(image.width * scale)), max(1, round(image.height * scale)))
+        image = image.resize(new_size, Image.Resampling.LANCZOS)
+
+    quality = _JPEG_QUALITY
+    while True:
+        buf = io.BytesIO()
+        image.save(buf, format="JPEG", quality=quality)
+        data = buf.getvalue()
+        if len(data) <= _MAX_PAYLOAD_BYTES or quality <= 30:
+            return data
+        quality -= 15
 
 
 def _verdict_from_tool_input(

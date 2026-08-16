@@ -129,6 +129,67 @@ def test_run_analysis_one_error_does_not_stop_the_sweep() -> None:
     assert {r.taxonomy_id for r in runs} == {"F04", "F07"}
 
 
+# --- DetectorRun.fixability (QUEUE.md item 18d, DECISIONS.md D-009) ------
+
+
+def test_run_analysis_detected_finding_carries_fixability() -> None:
+    def detected(frame):
+        return Finding(taxonomy_id="F06", description="stranger's shoulder")
+
+    lookup = _lookup({"F06": detected})
+    _output, runs = analyze.run_analysis(_frame(), detector_lookup=lookup, ids=["F06"])
+    assert runs[0].fixability == "post-fixable"
+
+
+def test_run_analysis_clean_and_stub_and_error_have_no_fixability() -> None:
+    def stub(frame):
+        raise DetectorNotImplemented("F14: not yet implemented")
+
+    def errors(frame):
+        raise RuntimeError("boom")
+
+    lookup = _lookup({"F07": lambda frame: None, "F14": stub, "F04": errors})
+    _output, runs = analyze.run_analysis(_frame(), detector_lookup=lookup, ids=["F07", "F14", "F04"])
+    assert {r.fixability for r in runs} == {None}
+
+
+def test_run_analysis_s_item_finding_has_no_fixability() -> None:
+    def detected(frame):
+        return Finding(taxonomy_id="S01", description="figure in the foreground")
+
+    lookup = _lookup({"S01": detected})
+    _output, runs = analyze.run_analysis(_frame(), detector_lookup=lookup, ids=["S01"])
+    assert runs[0].fixability is None
+
+
+def test_run_analysis_conditional_finding_resolves_by_sub_pattern() -> None:
+    def bowing(frame):
+        return Finding(taxonomy_id="F05", description="ceiling curves", sub_pattern="bowing")
+
+    def drift(frame):
+        return Finding(taxonomy_id="F05", description="subject off-center", sub_pattern="off_center_drift")
+
+    assert analyze.run_analysis(_frame(), detector_lookup=_lookup({"F05": bowing}), ids=["F05"])[1][0].fixability == (
+        "post-fixable"
+    )
+    assert analyze.run_analysis(_frame(), detector_lookup=_lookup({"F05": drift}), ids=["F05"])[1][0].fixability == (
+        "capture-only"
+    )
+
+
+def test_run_analysis_conditional_finding_without_sub_pattern_is_disclosed_not_fatal() -> None:
+    # A hand-built F05 Finding missing its sub_pattern (schema.Finding
+    # itself allows this - sub_pattern is optional) must not crash the
+    # sweep; resolve_finding_fixability's SchemaError is caught and
+    # disclosed on the run instead (analyze._fixability_or_disclosed_gap).
+    def bare(frame):
+        return Finding(taxonomy_id="F05", description="ceiling curves")
+
+    _output, runs = analyze.run_analysis(_frame(), detector_lookup=_lookup({"F05": bare}), ids=["F05"])
+    assert runs[0].status == "detected"
+    assert runs[0].fixability is not None and "unresolved" in runs[0].fixability
+
+
 # --- render_report(): counts and per-ID lines land in the body -----------
 
 
@@ -142,7 +203,7 @@ def test_render_report_includes_counts_and_per_id_lines() -> None:
     body = analyze.render_report(Path("photo.jpg"), frame, output, runs)
 
     assert "1 detected, 1 clean, 0 stub, 0 error" in body
-    assert "- F06 [detected] — edge intrusion" in body
+    assert "- F06 [detected] — edge intrusion (fixability: post-fixable)" in body
     assert "- F07 [clean]" in body
     assert "pick: None, habit: None" in body
     assert '"schema_version": "1.0"' in body

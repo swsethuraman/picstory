@@ -29,14 +29,34 @@ calls - QUEUE.md item 12 (the running profile) needs a genuine recorded
 example of F06's `edge` sub-pattern field (see
 `picstory.detectors.f06.EDGE_SUB_PATTERN`), not just a hand-authored one.
 
-6 live calls total.
+A fourth pair of scenes, bowing_ceiling and off_center_drift_ceiling (both a
+drawn coffered-ceiling grid), add F05's `geometry` sub-pattern (QUEUE.md
+item 18c, DECISIONS.md D-009): bowing_ceiling curves the grid outward from
+its own center with a centered medallion (TAXONOMY.md v1.2's `bowing` case
+- a lens artifact); off_center_drift_ceiling shears the grid via horizontal
+skew increasing away from the frame's center, with the medallion subject
+itself placed off that center (the `off_center_drift` case - the subject's
+position is what's driving the distortion). See `_off_center_drift_scene`'s
+own docstring: a first attempt using a pure positional shift with no line
+skew was recorded live and correctly came back `detected=False` (F05
+requires curved/skewed lines; a plain shift has neither) - that recording
+was superseded by this shear-based version, not silently discarded, per
+the same "log it, don't force it" standard the rest of this experiment
+uses.
 
-Usage: uv run python scripts/record_vision_fixtures.py
+9 live calls total across this file's history (6 recorded previously + 3
+F05 calls this session, one superseded - `--only F05` limits a re-run to
+just the named IDs, so extending this script again does not have to
+re-spend on calls already recorded; QUEUE.md item 19b names the fuller
+per-ID split as a separate future cleanup).
+
+Usage: uv run python scripts/record_vision_fixtures.py [--only ID [ID ...]]
 Requires PICSTORY_VISION_KEY (or ANTHROPIC_API_KEY) in the environment.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -59,6 +79,7 @@ from picstory.detectors._vision import (  # noqa: E402
     _tool_schema,
     parse_tool_use_response,
 )
+from picstory.detectors.f05 import GEOMETRY_SUB_PATTERN  # noqa: E402
 from picstory.detectors.f06 import EDGE_SUB_PATTERN  # noqa: E402
 from picstory.frame import Frame  # noqa: E402
 from picstory.schema import taxonomy_detection_text  # noqa: E402
@@ -111,6 +132,81 @@ def _edge_intrusion_scene() -> np.ndarray:
     return np.array(image)
 
 
+def _bowing_ceiling_scene() -> np.ndarray:
+    """A coffered-ceiling grid bowed outward from its own center, subject centered.
+
+    TAXONOMY.md v1.2's `bowing` case (F05's `geometry` sub-pattern, item
+    18c): "curved lines with the subject centered" - a lens artifact, not
+    driven by where the subject sits.
+    """
+    width, height = 512, 512
+    image = Image.new("RGB", (width, height), (235, 228, 214))  # ceiling plaster
+    draw = ImageDraw.Draw(image)
+
+    grid_w, grid_h = int(width * 0.8), int(height * 0.8)
+    cx, cy = width / 2, height / 2
+    left, top = cx - grid_w / 2, cy - grid_h / 2
+    curvature = 0.35
+
+    def warp(x: float, y: float) -> tuple[float, float]:
+        nx, ny = (x - cx) / (grid_w / 2), (y - cy) / (grid_h / 2)
+        bulge = curvature * (nx**2 + ny**2)
+        return x + (x - cx) * bulge, y + (y - cy) * bulge
+
+    cols, rows, steps = 7, 6, 40
+    for i in range(cols + 1):
+        x = left + grid_w * i / cols
+        draw.line([warp(x, top + grid_h * t / steps) for t in range(steps + 1)], fill=(120, 110, 95), width=3)
+    for j in range(rows + 1):
+        y = top + grid_h * j / rows
+        draw.line([warp(left + grid_w * t / steps, y) for t in range(steps + 1)], fill=(120, 110, 95), width=3)
+
+    r = int(min(grid_w, grid_h) * 0.06)
+    draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(150, 120, 60))  # medallion, centered
+    return np.array(image)
+
+
+def _off_center_drift_scene() -> np.ndarray:
+    """A coffered-ceiling grid skewed by horizontal shear, subject off-center.
+
+    TAXONOMY.md v1.2's `off_center_drift` case (F05's `geometry` sub-pattern,
+    item 18c): "the subject placed off the ultrawide's center" driving the
+    distortion. Unlike `_bowing_ceiling_scene`'s symmetric bulge (a lens
+    artifact independent of framing), this scene's skew increases with
+    distance from the *frame's* center while the grid (and its medallion
+    subject) itself sits off to one side - a first attempt using a pure
+    positional shift with no line skew was made and recorded live (see
+    scripts/record_vision_fixtures.py's own recording run): the model
+    correctly answered `detected=False`, because F05's Detection text
+    requires curved/skewed lines, and a plain shift has neither. This
+    shear-based version adds the skew a real off-axis ultrawide crop would
+    show, so the scene actually presents the condition being asked about.
+    """
+    width, height = 512, 512
+    image = Image.new("RGB", (width, height), (235, 228, 214))  # ceiling plaster
+    draw = ImageDraw.Draw(image)
+
+    grid_w, grid_h = int(width * 0.9), int(width * 0.9)
+    true_cx, cy = width * 0.74, height / 2  # off the frame's own center (256)
+    left, top = true_cx - grid_w / 2, cy - grid_h / 2
+
+    def warp(x: float, y: float) -> tuple[float, float]:
+        shear = 0.6 * (x - width / 2) / (width / 2)
+        return x, y + shear * (y - cy)
+
+    cols, rows, steps = 7, 6, 40
+    for i in range(cols + 1):
+        x = left + grid_w * i / cols
+        draw.line([warp(x, top + grid_h * t / steps) for t in range(steps + 1)], fill=(120, 110, 95), width=3)
+    for j in range(rows + 1):
+        y = top + grid_h * j / rows
+        draw.line([warp(left + grid_w * t / steps, y) for t in range(steps + 1)], fill=(120, 110, 95), width=3)
+
+    r = int(min(grid_w, grid_h) * 0.06)
+    draw.ellipse([true_cx - r, cy - r, true_cx + r, cy + r], fill=(150, 120, 60))  # medallion, off-center
+    return np.array(image)
+
+
 def _frame(name: str, *, with_figure: bool) -> Frame:
     rgb = _landmark_scene(with_figure=with_figure)
     return Frame(frame_id=name, path=Path(f"{name}.jpg"), rgb=rgb, exif={})
@@ -159,9 +255,20 @@ def _record_one(
     }
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     import anthropic
     import os
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--only",
+        nargs="+",
+        metavar="ID",
+        default=None,
+        help="limit this run to these taxonomy IDs (e.g. --only F05), so extending "
+        "this script with a new ID's calls does not re-spend on IDs already recorded",
+    )
+    args = parser.parse_args(argv)
 
     api_key = os.environ.get("PICSTORY_VISION_KEY") or os.environ.get("ANTHROPIC_API_KEY")
     key_source = (
@@ -189,6 +296,14 @@ def main() -> int:
             frame_id="edge_intrusion_right", path=Path("edge_intrusion_right.jpg"),
             rgb=_edge_intrusion_scene(), exif={},
         ),
+        "bowing_ceiling": Frame(
+            frame_id="bowing_ceiling", path=Path("bowing_ceiling.jpg"),
+            rgb=_bowing_ceiling_scene(), exif={},
+        ),
+        "off_center_drift_ceiling": Frame(
+            frame_id="off_center_drift_ceiling", path=Path("off_center_drift_ceiling.jpg"),
+            rgb=_off_center_drift_scene(), exif={},
+        ),
     }
     calls = [
         ("landmark_alone", "F13", None),
@@ -197,7 +312,12 @@ def main() -> int:
         ("landmark_with_figure", "S01", None),
         ("landmark_alone", "F06", EDGE_SUB_PATTERN),
         ("edge_intrusion_right", "F06", EDGE_SUB_PATTERN),
+        ("bowing_ceiling", "F05", GEOMETRY_SUB_PATTERN),
+        ("off_center_drift_ceiling", "F05", GEOMETRY_SUB_PATTERN),
     ]
+    if args.only:
+        wanted = set(args.only)
+        calls = [c for c in calls if c[1] in wanted]
 
     rows = []
     failures = []
@@ -211,6 +331,7 @@ def main() -> int:
         "# record_vision_fixtures",
         "",
         f"key source: {key_source}",
+        f"only: {args.only or 'all'}",
         f"model: {MODEL}",
         f"{len(rows)}/{len(calls)} live calls recorded to {FIXTURES_DIR}",
         "",
@@ -218,7 +339,7 @@ def main() -> int:
         "",
     ]
     for row in rows:
-        sub_pattern_note = f", edge={row['sub_pattern']}" if row["sub_pattern"] else ""
+        sub_pattern_note = f", sub_pattern={row['sub_pattern']}" if row["sub_pattern"] else ""
         body_lines.append(
             f"- {row['fixture']}: {row['taxonomy_id']} on {row['image']} -> "
             f"detected={row['detected']}{sub_pattern_note} ({row['rationale']})"

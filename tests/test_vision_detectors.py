@@ -36,6 +36,17 @@ session made 2 more live F06 calls with `f06.EDGE_SUB_PATTERN` wired in
 too - the live model genuinely returned `edge=right` for the intrusion
 scene, not a hand-picked value. See
 "...replays_genuine_recorded_f06_edge_sub_pattern" below.
+
+QUEUE.md item 18c (DECISIONS.md D-009) extended it again for F05's
+`geometry` sub-pattern: 2 live calls against two drawn ceiling-grid scenes
+(`scripts/record_vision_fixtures.py`'s `_bowing_ceiling_scene`/
+`_off_center_drift_scene`), recorded under `tests/fixtures/vision/`. The
+live model genuinely returned `geometry=bowing` for the symmetric-bulge
+scene and `geometry=off_center_drift` for the sheared, off-center-medallion
+scene - not hand-picked values (a first attempt at the second scene, a pure
+positional shift with no line skew, correctly came back `detected=False`
+and was superseded, not discarded - see that script's own docstring). See
+"...replays_genuine_recorded_f05_geometry_sub_pattern" below.
 """
 
 from __future__ import annotations
@@ -57,6 +68,7 @@ from picstory.detectors._vision import (
     judge,
     parse_tool_use_response,
 )
+from picstory.detectors.f05 import GEOMETRY_SUB_PATTERN
 from picstory.detectors.f06 import EDGE_SUB_PATTERN
 from picstory.frame import Frame
 from picstory.schema import taxonomy_detection_text
@@ -176,6 +188,29 @@ def test_f05_ultrawide_geometric_distortion_negative() -> None:
     assert _detect_fn("F05")(_frame(), caller=_spy_caller(False)) is None
 
 
+# --- F05's geometry sub_pattern (QUEUE.md item 18c: fixability, D-009) ----
+
+
+def test_f05_finding_carries_geometry_sub_pattern_from_caller() -> None:
+    finding = _detect_fn("F05")(_frame(), caller=_spy_caller(True, "ceiling lines bow", sub_pattern="bowing"))
+    assert finding is not None
+    assert finding.sub_pattern == "bowing"
+
+
+def test_f05_finding_sub_pattern_none_when_caller_omits_it() -> None:
+    # Same optionality as F06's edge sub_pattern - a caller that never sets
+    # it still produces a valid Finding.
+    finding = _detect_fn("F05")(_frame(), caller=_spy_caller(True, "ceiling lines curve"))
+    assert finding is not None
+    assert finding.sub_pattern is None
+
+
+def test_f05_detector_request_carries_geometry_sub_pattern_spec() -> None:
+    caller = _spy_caller(True, "x", sub_pattern="off_center_drift")
+    _detect_fn("F05")(_frame(), caller=caller)
+    assert caller.calls[0].sub_pattern is GEOMETRY_SUB_PATTERN
+
+
 def test_f06_edge_intrusion_positive() -> None:
     finding = _detect_fn("F06")(_frame(), caller=_spy_caller(True, "stranger's shoulder, right edge"))
     assert finding is not None and finding.taxonomy_id == "F06"
@@ -209,11 +244,12 @@ def test_f06_detector_request_carries_edge_sub_pattern_spec() -> None:
     assert caller.calls[0].sub_pattern is EDGE_SUB_PATTERN
 
 
-@pytest.mark.parametrize("taxonomy_id", sorted(set(_MODULES) - {"F06"}))
-def test_only_f06_requests_a_sub_pattern(taxonomy_id: str) -> None:
-    # F06 is the only ID with a TAXONOMY.md Profile note
-    # (schema.taxonomy_ids_with_subpattern()) - every other judgment-
-    # dependent detector's request must carry no sub_pattern at all.
+@pytest.mark.parametrize("taxonomy_id", sorted(set(_MODULES) - {"F05", "F06"}))
+def test_no_sub_pattern_requested_outside_f05_and_f06(taxonomy_id: str) -> None:
+    # F05 (conditional Fixability, QUEUE.md item 18c/D-009) and F06 (Profile
+    # note) are the only two IDs in schema.taxonomy_ids_with_subpattern() -
+    # every other judgment-dependent detector's request must carry no
+    # sub_pattern at all.
     caller = _spy_caller(True, "x")
     _detect_fn(taxonomy_id)(_frame(), caller=caller)
     assert caller.calls[0].sub_pattern is None
@@ -321,6 +357,13 @@ def test_tool_schema_with_sub_pattern_adds_enum_constrained_property() -> None:
     # Not in `required` - the model omits it when detected is false; parsing
     # (not the JSON schema) enforces "required when detected is true."
     assert "edge" not in schema["input_schema"]["required"]
+
+
+def test_tool_schema_with_f05_geometry_sub_pattern_adds_enum_constrained_property() -> None:
+    schema = _tool_schema("F05", GEOMETRY_SUB_PATTERN)
+    geometry_property = schema["input_schema"]["properties"]["geometry"]
+    assert geometry_property["enum"] == list(GEOMETRY_SUB_PATTERN.enum_values)
+    assert "geometry" not in schema["input_schema"]["required"]
 
 
 # --- parse_tool_use_response()/sub_pattern extraction ----------------------
@@ -445,6 +488,14 @@ _RECORDED_F06_CALLS = {
     "f06_edge_intrusion_right.json": (True, "right"),
 }
 
+# F05 recordings carry GEOMETRY_SUB_PATTERN (QUEUE.md item 18c, D-009) -
+# same reasoning as _RECORDED_F06_CALLS above.
+# fixture filename -> (expected detected, expected geometry)
+_RECORDED_F05_CALLS = {
+    "f05_bowing_ceiling.json": (True, "bowing"),
+    "f05_off_center_drift_ceiling.json": (True, "off_center_drift"),
+}
+
 
 def _load_recorded_response(fixture_name: str):
     from anthropic.types import Message
@@ -474,6 +525,20 @@ def test_parse_tool_use_response_replays_genuine_recorded_f06_edge_sub_pattern(f
     verdict = parse_tool_use_response(response, "F06", EDGE_SUB_PATTERN)
     assert verdict.detected is expected_detected
     assert verdict.sub_pattern == expected_edge
+    assert verdict.rationale
+
+
+@pytest.mark.parametrize("fixture_name", sorted(_RECORDED_F05_CALLS))
+def test_parse_tool_use_response_replays_genuine_recorded_f05_geometry_sub_pattern(fixture_name: str) -> None:
+    # QUEUE.md item 18c (DECISIONS.md D-009): two genuine live calls made
+    # with GEOMETRY_SUB_PATTERN wired in (scripts/record_vision_fixtures.py)
+    # - the live model returned both `bowing` and `off_center_drift` on
+    # scenes drawn to elicit each, not a hand-picked value.
+    expected_detected, expected_geometry = _RECORDED_F05_CALLS[fixture_name]
+    response = _load_recorded_response(fixture_name)
+    verdict = parse_tool_use_response(response, "F05", GEOMETRY_SUB_PATTERN)
+    assert verdict.detected is expected_detected
+    assert verdict.sub_pattern == expected_geometry
     assert verdict.rationale
 
 

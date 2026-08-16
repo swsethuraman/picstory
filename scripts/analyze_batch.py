@@ -67,6 +67,16 @@ appended to `AnalysisOutput.rules` - a different object on the output from
 `frames`/`comparisons`, per TAXONOMY.md's "different object type for the
 classifier" framing of §R.
 
+Each detected F-item finding's Fixability (item 18d, DECISIONS.md D-009,
+TAXONOMY.md v1.2) is resolved once via `analyze._fixability_or_disclosed_gap`
+(a thin, non-fatal wrapper over `schema.resolve_finding_fixability` - see its
+own docstring) at the same point `DetectorRun` is built, both here and in
+`analyze.py`'s shared per-frame sweep, and carried on `DetectorRun.fixability`
+- `render_report`'s "## Per-frame results" section prints it alongside each
+detected finding's description, one word ("post-fixable" or "capture-only"),
+so the Check surface D-009 was written for has this input ready when it
+lands.
+
 The running profile (item 12, TAXONOMY.md's "The running profile" output row)
 is updated once per `main()` run: `picstory.profile.load_profile` reads
 whatever this user's machine has recorded so far, `profile.record_session`
@@ -89,7 +99,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _report import report  # noqa: E402
-from analyze import DetectorRun, evaluable_ids, run_analysis  # noqa: E402
+from analyze import DetectorRun, _fixability_or_disclosed_gap, evaluable_ids, run_analysis  # noqa: E402
 
 from picstory import cmp, detectors, profile as profile_module, ranking  # noqa: E402
 from picstory.batch import load_batch  # noqa: E402
@@ -160,7 +170,9 @@ def _merge_batch_level_findings(
         else:
             frame_analysis.findings.append(finding)
             runs_by_frame[frame_analysis.frame_id].append(
-                DetectorRun(taxonomy_id, "detected", finding.description)
+                DetectorRun(
+                    taxonomy_id, "detected", finding.description, _fixability_or_disclosed_gap(finding)
+                )
             )
 
 
@@ -395,7 +407,8 @@ def render_report(
         )
         for r in sorted(runs, key=lambda r: r.taxonomy_id):
             detail = f" — {r.detail}" if r.detail else ""
-            lines.append(f"- {r.taxonomy_id} [{r.status}]{detail}")
+            fixability = f" (fixability: {r.fixability})" if r.fixability else ""
+            lines.append(f"- {r.taxonomy_id} [{r.status}]{detail}{fixability}")
         lines.append("")
 
     lines += ["## AnalysisOutput JSON", "", "```json", output.to_json(), "```"]

@@ -49,6 +49,10 @@ _PROFILE_NOTE_LINE = re.compile(
     r"^### (?P<id>[FSR]\d{2}) ·.*\n(?:^-.*\n)*?^- \*\*Profile note:\*\* (?P<text>.+)$",
     re.MULTILINE,
 )
+_FIXABILITY_LINE = re.compile(
+    r"^### (?P<id>[FSR]\d{2}) ·.*\n(?:^-.*\n)*?^- \*\*Fixability:\*\* (?P<text>.+)$",
+    re.MULTILINE,
+)
 
 
 class SchemaError(ValueError):
@@ -177,31 +181,131 @@ def cmp_rubric_text() -> str:
 
 
 @lru_cache(maxsize=1)
-def taxonomy_ids_with_subpattern() -> frozenset[str]:
-    """IDs TAXONOMY.md documents as having a profile-layer sub-pattern.
+def _fixability_texts() -> dict[str, str]:
+    text = _TAXONOMY_MD.read_text(encoding="utf-8")
+    return {m.group("id"): m.group("text").strip() for m in _FIXABILITY_LINE.finditer(text)}
 
-    Single source of truth (same reasoning as `taxonomy_detection_text` etc.):
-    parsed from each item's `- **Profile note:**` bullet rather than
-    hardcoded, so a future TAXONOMY.md amendment adding another Profile note
-    is picked up without a code change. Today this is `{"F06"}` - its note
-    reads "Directional sub-patterns (e.g. a right-third or left-edge blind
-    spot) are per-user traits tracked by the profile, not separate taxonomy
-    items" (TAXONOMY.md's output-mapping table: "The running profile | Per-
-    user recurrence of F/S items and their sub-patterns (e.g. *which* edge
-    the user neglects)").
+
+def taxonomy_fixability(taxonomy_id: str) -> str:
+    """The exact Fixability text for one F-item, parsed verbatim from TAXONOMY.md v1.2.
+
+    Same verbatim-source-of-truth reasoning as `taxonomy_correction_text`
+    (QUEUE.md item 18a, DECISIONS.md D-009). Only F-items carry a Fixability
+    bullet - v1.2's changelog is explicit that "S-items, R-items and CMP
+    intentionally carry no Fixability - strengths need no fix, rules and the
+    rubric are not per-frame findings"; S/R items raise.
+    """
+    try:
+        return _fixability_texts()[taxonomy_id]
+    except KeyError:
+        raise SchemaError(f"no Fixability text found for taxonomy_id {taxonomy_id!r}") from None
+
+
+_FIXABILITY_CATEGORY = re.compile(r"^(post-fixable|capture-only|conditional)\b")
+
+
+def taxonomy_fixability_category(taxonomy_id: str) -> str:
+    """The Fixability bullet's leading category: post-fixable / capture-only / conditional.
+
+    Every F-item's v1.2 Fixability text opens with exactly one of these three
+    words (optionally followed by a parenthetical naming the edit technique,
+    e.g. "post-fixable (crop)") before the em-dash explanation. Parsed out of
+    `taxonomy_fixability`'s own text rather than a second literal copy, so
+    drift between the category and the full text is structurally impossible.
+    """
+    text = taxonomy_fixability(taxonomy_id)
+    match = _FIXABILITY_CATEGORY.match(text)
+    if match is None:
+        raise SchemaError(
+            f"Fixability text for {taxonomy_id!r} does not start with a recognized "
+            f"category (post-fixable/capture-only/conditional): {text!r}"
+        )
+    return match.group(1)
+
+
+@lru_cache(maxsize=1)
+def taxonomy_ids_with_subpattern() -> frozenset[str]:
+    """IDs TAXONOMY.md documents as carrying a closed-vocabulary sub-pattern field.
+
+    Two distinct sources, both parsed rather than hardcoded (same reasoning
+    as every other `taxonomy_*_text` helper): a `- **Profile note:**` bullet
+    (the profile-layer case - F06's "which edge," TAXONOMY.md's output-
+    mapping table: "The running profile | Per-user recurrence of F/S items
+    and their sub-patterns"), and a `- **Fixability:**` bullet whose category
+    is `conditional` (the fixability-layer case v1.2/D-009 added - F05's
+    `bowing`/`off_center_drift` decides which of post-fixable/capture-only
+    actually applies to a given finding). Both share the same
+    `Finding.sub_pattern` field and the same enum-constrained `SubPatternSpec`
+    call mechanism (`_vision.py`) - a sub-pattern is closed-vocabulary detail
+    the model names alongside its verdict, regardless of which downstream
+    consumer (the profile store, or fixability resolution) reads it. Today:
+    F06 (Profile note) ∪ F05 (conditional Fixability) = `{"F05", "F06"}`.
     """
     text = _TAXONOMY_MD.read_text(encoding="utf-8")
-    return frozenset(m.group("id") for m in _PROFILE_NOTE_LINE.finditer(text))
+    profile_note_ids = frozenset(m.group("id") for m in _PROFILE_NOTE_LINE.finditer(text))
+    conditional_ids = frozenset(
+        tid for tid in _fixability_texts() if taxonomy_fixability_category(tid) == "conditional"
+    )
+    return profile_note_ids | conditional_ids
+
+
+CONDITIONAL_FIXABILITY_RESOLUTION: dict[str, dict[str, str]] = {
+    "F05": {"bowing": "post-fixable", "off_center_drift": "capture-only"},
+}
+"""Per-ID, per-sub_pattern-value resolution for `conditional` Fixability
+(QUEUE.md item 18c, DECISIONS.md D-009's ruling, TAXONOMY.md v1.2). Not
+parsed from TAXONOMY.md: the mapping from a closed-vocabulary sub-pattern
+value to post-fixable/capture-only lives in the Fixability bullet's own
+prose explanation ("`bowing` ... is post-fixable ...; `off_center_drift` ...
+is capture-only"), not a second structured bullet to regex for. Hand-
+transcribed here instead - `tests/test_schema.py`'s
+`test_conditional_fixability_resolution_is_complete` guards that every
+`conditional`-category ID has an entry here and vice versa, so a future
+TAXONOMY.md amendment adding a second conditional item fails loudly instead
+of silently resolving to nothing.
+"""
+
+
+def resolve_finding_fixability(finding: Finding) -> str | None:
+    """One word ("post-fixable" or "capture-only") for `finding`, or `None`.
+
+    QUEUE.md item 18(d): "the Finding-level fixability surfaced in
+    analyze_batch's report ... so the Check surface has its input when it
+    arrives." Only F-items carry a Fixability bullet - S-items and
+    `unclassified` return `None` (v1.2's changelog: S-items/R-items/CMP
+    "intentionally carry no Fixability"). A `conditional` category (F05
+    today) is resolved per-finding via its `sub_pattern` against
+    `CONDITIONAL_FIXABILITY_RESOLUTION` - raises if a conditional finding
+    lacks a resolvable sub_pattern rather than guessing; in production this
+    cannot happen because `_vision.judge`'s `SubPatternSpec` mechanism
+    requires the sub-pattern field whenever `detected` is true.
+    """
+    if not finding.taxonomy_id.startswith("F"):
+        return None
+    category = taxonomy_fixability_category(finding.taxonomy_id)
+    if category != "conditional":
+        return category
+    resolution = CONDITIONAL_FIXABILITY_RESOLUTION.get(finding.taxonomy_id, {})
+    resolved = resolution.get(finding.sub_pattern or "")
+    if resolved is None:
+        raise SchemaError(
+            f"conditional Fixability for {finding.taxonomy_id!r} could not be resolved: "
+            f"sub_pattern={finding.sub_pattern!r} is not in {sorted(resolution)}"
+        )
+    return resolved
 
 
 @dataclass
 class Finding:
     """One per-frame observation: a taxonomy ID, or `unclassified` + description.
 
-    `sub_pattern` is optional, profile-layer detail (TAXONOMY.md's "running
-    profile" row) - only valid on IDs with a documented Profile note
-    (`taxonomy_ids_with_subpattern()`); never a free-standing classification
-    of its own.
+    `sub_pattern` is optional, closed-vocabulary detail - only valid on IDs
+    in `taxonomy_ids_with_subpattern()`; never a free-standing classification
+    of its own. Two distinct consumers read it today: profile-layer recurrence
+    (TAXONOMY.md's "running profile" row - F06's "which edge") and fixability
+    resolution (`resolve_finding_fixability`, QUEUE.md item 18c - F05's
+    `bowing`/`off_center_drift`). Which consumer applies is determined by the
+    finding's own `taxonomy_id`, not by anything on this field.
     """
 
     taxonomy_id: str

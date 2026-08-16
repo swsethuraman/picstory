@@ -2,7 +2,7 @@
 
 D-nnn format, stable IDs. BUILDER writes here when blocked (question, options, recommendation, reasoning) and moves on. CRITIC may add entries and may not close them. Only the human writes rulings; rulings are appended, never rewritten. **At five open decisions, both routines halt and write HALT.md.**
 
-Open count: 1
+Open count: 0
 
 ---
 
@@ -350,7 +350,7 @@ Open count: 1
   delivery (reshoot vs. edit) is product behavior, not taxonomy, and is
   not part of this ruling.
 
-## D-010 · Habit calibration: does F08 actually win on the capstone batch, or does S01?
+## D-010 · Habit calibration: does F08 actually win on the capstone batch, or does S01? — **RULED**
 - **Question:** QUEUE.md item 17(a) and D-008c's own ruling both name the
   calibration fixture's required outcome explicitly: "F05/F06/F11 must
   classify pervasive and F08 must win the habit." Implementing D-008c's
@@ -393,3 +393,14 @@ Open count: 1
   here — not silently overriding the ruling's stated outcome, per
   CLAUDE.md's "nothing answers its own decision."
 - **Ruling:** (pending)
+- **Ruling (16 Aug 2026, owner):** Accept the builder's count. The "F08
+  wins, 9 frames" calibration claim in D-008c's ruling was an unverified
+  figure carried from a secondary critique of the capstone report and is
+  withdrawn — the mechanism was ruled correctly, the worked example was
+  not. The fixture asserts the actual capstone-derived result: F05/F06/F11
+  classify pervasive; S01 is the habit; F08 is the top F-item. D-008c's
+  mechanism (pervasiveness threshold 2/3, session note for pervasive
+  findings) stands unchanged. An S-item habit is legitimate coaching per
+  TAXONOMY.md's output-mapping table ("reinforcement counts as coaching").
+  No preference between F- and S-items is introduced — that would invent a
+  rule the taxonomy does not state, the same move D-008b declined.

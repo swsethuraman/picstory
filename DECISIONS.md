@@ -301,6 +301,11 @@ Open count: 0
   is unchanged — pervasiveness affects habit selection, not what gets
   recorded. When profile depth permits a user-relative base rate,
   reopen as a new D-item citing this ruling.
+- **Superseded in part (16 Aug 2026, owner):** the calibration claim
+  "F08 must win the habit" is withdrawn per D-010 — the actual
+  capstone-derived result is S01 as habit, F08 as top F-item. The
+  pervasiveness mechanism, threshold, and session-note requirements
+  above stand unchanged.
 
 ## D-009 · Editing suggestions: the v1 scope excluded editing — the Check context requires it — **RULED**
 - **Question:** The product seed's v1 scope excluded "editing, filters,

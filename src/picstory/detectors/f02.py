@@ -12,6 +12,19 @@ find pixels that are both dark (low luminance) and locally low-contrast
 has no in-focus texture, unlike a dark but sharp subject like a shadowed
 doorway). If a contiguous run of such pixels covers a large share of that
 edge's length, that is the "mass along an edge" the taxonomy names.
+
+Known limitation (capstone run, docs/capstone-vienna-report.md, frame
+30_IMG_0981): a dark, out-of-focus stone archway shot *through* - a real
+architectural element the photographer composed around, not a grip/lens
+obstruction - reads the same way to this heuristic as an actual
+obstruction: dark and locally flat along the top edge (recorded there as
+"Dark, low-texture mass along the top edge covering 86% of that edge's
+length"). The heuristic has no way to distinguish "dark and flat because
+out-of-focus foreground debris" from "dark and flat because out-of-focus
+background architecture the frame is deliberately shot through" - both
+produce the same pixel signature. Not a threshold change without further
+evidence; disclosed here as the false-positive class this proxy is known
+to have.
 """
 
 from __future__ import annotations

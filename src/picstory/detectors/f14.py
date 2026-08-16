@@ -27,5 +27,7 @@ from picstory.detectors.base import DetectorNotImplemented, register
 @register("F14")
 def detect(*_args, **_kwargs):
     raise DetectorNotImplemented(
-        "F14: Wide-shot monoculture detector not yet implemented (QUEUE.md item 4)"
+        "F14: Wide-shot monoculture detector stands stubbed per DECISIONS.md D-007 "
+        "(location clustering, its honest precondition, is out of scope for the "
+        "remainder of the experiment)"
     )

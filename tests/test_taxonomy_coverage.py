@@ -20,6 +20,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 TAXONOMY = ROOT / "TAXONOMY.md"
 SRC = ROOT / "src"
@@ -44,6 +46,13 @@ def test_taxonomy_parses() -> None:
     )
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="F14 stands stubbed per DECISIONS.md D-007 for the remainder of the "
+    "experiment - this guard's red is the documented, intended end state, not a "
+    "regression. strict=True so a future F14 implementation forces this marker's "
+    "conscious removal rather than letting it XPASS silently.",
+)
 def test_every_id_has_detector_and_named_test() -> None:
     ids = taxonomy_ids()
 

@@ -2,7 +2,7 @@
 
 D-nnn format, stable IDs. BUILDER writes here when blocked (question, options, recommendation, reasoning) and moves on. CRITIC may add entries and may not close them. Only the human writes rulings; rulings are appended, never rewritten. **At five open decisions, both routines halt and write HALT.md.**
 
-Open count: 0
+Open count: 1
 
 ---
 
@@ -408,3 +408,64 @@ Open count: 0
   TAXONOMY.md's output-mapping table ("reinforcement counts as coaching").
   No preference between F- and S-items is introduced — that would invent a
   rule the taxonomy does not state, the same move D-008b declined.
+
+## D-011 · F05's Detection text vs. its own Fixability split: does `bowing` require an off-center subject, or not? — filed by CRITIC (critic-006)
+- **Question:** F05's Detection text (v1.0, unchanged by v1.2 per the
+  byte-identical guard): "Curved or skewed lines on ceilings and symmetric
+  architecture when the subject drifts off the ultrawide's center." Read
+  as a gating condition, this requires the subject to be off-center for
+  the detected condition to be present at all — consistent with F05's own
+  Correction text, "keep symmetric subjects centered" (the fix is
+  recentering, which only makes sense if drift is what's wrong). But
+  v1.2's Fixability bullet (QUEUE.md item 18c, DECISIONS.md D-009) splits
+  F05 into two sub-patterns via `f05.py`'s `GEOMETRY_SUB_PATTERN`: `bowing`,
+  described in both TAXONOMY.md's own Fixability bullet ("`bowing` (curved
+  lines with the subject centered)") and in `f05.py`'s sub-pattern
+  description ("'bowing' if ... the subject itself is centered in the
+  frame") — literally the opposite of Detection's stated precondition.
+  This is not a hypothetical reading: `tests/fixtures/vision/
+  f05_bowing_ceiling.json` (builder-019, a genuine recorded API call per
+  D-006's precedent, not a hand-authored shape) shows the live model
+  returning `detected=true, geometry=bowing` with a rationale that says
+  outright, "the subject ... is centered in the frame." So the detector,
+  as actually prompted and as actually exercised against a real model
+  call, reports F05 on a frame that does not meet Detection's own literal
+  stated condition — checked directly in the fixture, not inferred from
+  the docstring's claim.
+- **Options:** (a) Read "when the subject drifts off the ultrawide's
+  center" descriptively — a typical-circumstance clause naming when this
+  distortion is *commonly seen*, not a strict logical gate on when it
+  counts. Under this reading the current prompt/sub-pattern behavior is
+  correct as built; this entry closes as a clarification, not a defect.
+  (b) Read it as a strict gate — `detected=true` should require an
+  off-center subject in every case — in which case `bowing`'s "subject
+  centered" framing (present in TAXONOMY.md's own frozen Fixability bullet
+  *and* independently restated in `f05.py`'s `SubPatternSpec`) is itself
+  the kind of scope-broadening substitute CRITIC is instructed to watch
+  for: it accepts a materially different, broader failure (any
+  ceiling-line distortion, regardless of subject placement) than F05's
+  Detection text names. (c) TAXONOMY.md v1.2's own Fixability bullet is
+  evidence the owner already intends the broader F05 — D-009's own
+  "Complication" text (written before the ruling) names "pure ultrawide
+  bowing is lens-correctable" as a real, standalone case, independent of
+  off-center drift — in which case Detection's "when the subject
+  drifts..." clause is the one that's now narrower than the taxonomy's
+  current intent. Not a rewording (Detection text is frozen even under
+  v1.2 — "changes no existing text"), just a note that the two bullets on
+  the same ID describe overlapping but not identical conditions, and the
+  live prompt (which by CLAUDE.md's API-discipline rule embeds only
+  Detection, verbatim) is narrower than what the tool call as a whole
+  (Detection + sub-pattern instruction, in the same request) actually
+  accepts.
+- **Recommendation:** (c), with (a) as the practical reading to keep
+  operating on until ruled. D-009's own narrative already named "pure
+  ultrawide bowing" as a real, distinct case before this ruling landed, so
+  this reads as already-intended scope, not a builder invention — but it
+  is worth an explicit ruling because the one piece of text CLAUDE.md
+  requires the prompt to embed verbatim (Detection) does not, on its own,
+  cover what the request as a whole now accepts as a positive. A future
+  CRITIC session auditing "does the detector implement the actual
+  described failure, or a plausible substitute" would reasonably flag this
+  same gap again without D-009's fuller context in view — better to settle
+  it once, explicitly, than have it silently re-discovered.
+- **Ruling:** (pending)

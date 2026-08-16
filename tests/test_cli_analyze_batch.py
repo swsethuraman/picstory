@@ -207,6 +207,8 @@ def test_run_batch_analysis_merges_f03_findings_into_flagged_frames_only() -> No
     assert f03_runs["00_a"].status == "clean"
     assert f03_runs["01_b"].status == "detected"
     assert f03_runs["02_c"].status == "clean"
+    assert f03_runs["00_a"].fixability is None
+    assert f03_runs["01_b"].fixability == "capture-only"
 
 
 def test_run_batch_analysis_classifies_f03_stub_like_a_per_frame_stub() -> None:
@@ -522,7 +524,8 @@ def test_render_report_includes_per_frame_sections_and_totals() -> None:
     assert "3 detected, 9 clean, 0 stub, 0 error" in body
     assert "### 00_a:" in body
     assert "### 01_b:" in body
-    assert "- F06 [detected] — edge intrusion" in body
+    assert "- F06 [detected] — edge intrusion (fixability: post-fixable)" in body
+    assert "- F07 [detected] — featureless (fixability: post-fixable)" in body
     assert f"habit: F06 — {taxonomy_correction_text('F06')}" in body
     # All three frames tie on score -1; the tie keeps batch order, so
     # 00_a (first) is the pick.

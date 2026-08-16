@@ -59,7 +59,14 @@ from _report import report  # noqa: E402
 from picstory import detectors  # noqa: E402
 from picstory.detectors.base import DetectorNotImplemented  # noqa: E402
 from picstory.frame import Frame, load_frame  # noqa: E402
-from picstory.schema import AnalysisOutput, Finding, FrameAnalysis, taxonomy_ids  # noqa: E402
+from picstory.schema import (  # noqa: E402
+    AnalysisOutput,
+    Finding,
+    FrameAnalysis,
+    SchemaError,
+    resolve_finding_fixability,
+    taxonomy_ids,
+)
 
 # Not evaluable one frame at a time - see module docstring.
 _NOT_PER_FRAME = frozenset({"R01", "F03", "S03"})
@@ -70,6 +77,26 @@ class DetectorRun:
     taxonomy_id: str
     status: str  # "detected" | "clean" | "stub" | "error"
     detail: str | None  # finding description, or the stub/error message
+    fixability: str | None = None  # QUEUE.md item 18d: resolve_finding_fixability(finding), when detected
+
+
+def _fixability_or_disclosed_gap(finding: Finding) -> str | None:
+    """`resolve_finding_fixability(finding)`, disclosed rather than fatal on failure.
+
+    `_vision.judge`'s `SubPatternSpec` mechanism guarantees a real F05 vision
+    call always supplies a resolvable sub_pattern whenever `detected` is
+    true, so `resolve_finding_fixability` raising is a genuine schema-level
+    bug for that path. But `DetectorRun` construction here also sees
+    hand-built `Finding`s from tests (and any future non-vision-call
+    detector) that are not bound by that guarantee - a report field should
+    say so, not crash the whole batch over one finding's missing detail
+    (CLAUDE.md's "log it, move on" spending rule, extended to this smaller
+    per-finding case).
+    """
+    try:
+        return resolve_finding_fixability(finding)
+    except SchemaError as exc:
+        return f"unresolved ({exc})"
 
 
 def evaluable_ids() -> list[str]:
@@ -107,7 +134,11 @@ def run_analysis(
             runs.append(DetectorRun(taxonomy_id, "clean", None))
         else:
             findings.append(finding)
-            runs.append(DetectorRun(taxonomy_id, "detected", finding.description))
+            runs.append(
+                DetectorRun(
+                    taxonomy_id, "detected", finding.description, _fixability_or_disclosed_gap(finding)
+                )
+            )
 
     output = AnalysisOutput(frames=[FrameAnalysis(frame_id=frame.frame_id, findings=findings)])
     return output, runs
@@ -144,7 +175,8 @@ def render_report(photo: Path, frame: Frame, output: AnalysisOutput, runs: list[
     ]
     for r in sorted(runs, key=lambda r: r.taxonomy_id):
         detail = f" — {r.detail}" if r.detail else ""
-        lines.append(f"- {r.taxonomy_id} [{r.status}]{detail}")
+        fixability = f" (fixability: {r.fixability})" if r.fixability else ""
+        lines.append(f"- {r.taxonomy_id} [{r.status}]{detail}{fixability}")
 
     lines += ["", "## AnalysisOutput JSON", "", "```json", output.to_json(), "```"]
     return "\n".join(lines)

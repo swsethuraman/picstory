@@ -392,7 +392,6 @@ Open count: 0
   forced F08, with this discrepancy documented in the test itself and
   here — not silently overriding the ruling's stated outcome, per
   CLAUDE.md's "nothing answers its own decision."
-- **Ruling:** (pending)
 - **Ruling (16 Aug 2026, owner):** Accept the builder's count. The "F08
   wins, 9 frames" calibration claim in D-008c's ruling was an unverified
   figure carried from a secondary critique of the capstone report and is

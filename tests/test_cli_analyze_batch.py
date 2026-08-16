@@ -141,8 +141,12 @@ def test_run_batch_analysis_habit_none_when_nothing_recurs() -> None:
 
 
 def test_run_batch_analysis_habit_is_most_recurrent_f_or_s_item() -> None:
+    # F06 fires on 2 of 3 frames (2/3, not more than PERVASIVE_THRESHOLD) so
+    # it stays eligible for the habit per DECISIONS.md D-008c - firing on
+    # every frame would make it batch-pervasive instead (see the dedicated
+    # pervasiveness-exclusion test below).
     def detected(frame):
-        return Finding(taxonomy_id="F06", description="edge")
+        return None if frame.frame_id == "02_c" else Finding(taxonomy_id="F06", description="edge")
 
     lookup = _lookup({"F06": detected, "F07": lambda frame: None})
     frames = [_frame("00_a"), _frame("01_b"), _frame("02_c")]
@@ -158,10 +162,16 @@ def test_run_batch_analysis_habit_counts_f03_merged_findings() -> None:
     """The habit runs over the batch's *final* findings, F03's merge included."""
 
     def f03_findings(frames, **_kwargs):
-        return {f.frame_id: Finding(taxonomy_id="F03", description="safety copy") for f in frames}
+        # 2 of 3 frames (2/3, not more than PERVASIVE_THRESHOLD) - see the
+        # module comment above.
+        return {
+            f.frame_id: Finding(taxonomy_id="F03", description="safety copy")
+            for f in frames
+            if f.frame_id != "02_c"
+        }
 
     lookup = _lookup({"F03": f03_findings, "F07": lambda frame: None})
-    frames = [_frame("00_a"), _frame("01_b")]
+    frames = [_frame("00_a"), _frame("01_b"), _frame("02_c")]
 
     output, _runs, _comparison_runs = analyze_batch.run_batch_analysis(frames, detector_lookup=lookup, ids=["F07"])
 
@@ -487,31 +497,73 @@ def test_run_batch_analysis_r01_uses_the_real_registered_detector_by_default() -
 
 
 def test_render_report_includes_per_frame_sections_and_totals() -> None:
-    def detected(frame):
-        return Finding(taxonomy_id="F06", description="edge intrusion")
+    # F06 fires on 2 of 3 frames (2/3, not more than PERVASIVE_THRESHOLD) so
+    # it stays eligible for the habit per DECISIONS.md D-008c. A third
+    # frame carries its own F07 disqualifier instead of being left clean,
+    # so all three frames tie on score -1 (S-count 0 all round too) and the
+    # tie-break falls all the way to batch order - preserving 00_a as the
+    # pick and 00_a/01_b's original rank positions unchanged.
+    def f06(frame):
+        return None if frame.frame_id == "02_c" else Finding(taxonomy_id="F06", description="edge intrusion")
 
-    lookup = _lookup({"F06": detected, "F07": lambda frame: None})
-    frames = [_frame("00_a"), _frame("01_b")]
+    def f07(frame):
+        return Finding(taxonomy_id="F07", description="featureless") if frame.frame_id == "02_c" else None
+
+    lookup = _lookup({"F06": f06, "F07": f07})
+    frames = [_frame("00_a"), _frame("01_b"), _frame("02_c")]
     output, runs_by_frame, _comparison_runs = analyze_batch.run_batch_analysis(
         frames, detector_lookup=lookup, ids=["F06", "F07"]
     )
     body = analyze_batch.render_report(
-        [Path("a.jpg"), Path("b.jpg")], output, runs_by_frame
+        [Path("a.jpg"), Path("b.jpg"), Path("c.jpg")], output, runs_by_frame
     )
 
-    # F06 detected x2 + F07 clean x2 + F03 clean x2 + S03 clean x2 (both stubbed to no findings).
-    assert "2 detected, 6 clean, 0 stub, 0 error" in body
+    # F06 detected x2 + F07 detected x1 + F06 clean x1 + F07 clean x2 + F03 clean x3 + S03 clean x3.
+    assert "3 detected, 9 clean, 0 stub, 0 error" in body
     assert "### 00_a:" in body
     assert "### 01_b:" in body
     assert "- F06 [detected] — edge intrusion" in body
     assert f"habit: F06 — {taxonomy_correction_text('F06')}" in body
-    # Both frames carry the same F06 finding and tie on score -1; the tie
-    # keeps batch order, so 00_a (first) is the pick.
+    # All three frames tie on score -1; the tie keeps batch order, so
+    # 00_a (first) is the pick.
     assert "1. 00_a (score -1)" in body
     assert "2. 01_b (score -1)" in body
+    assert "3. 02_c (score -1)" in body
     assert "frame_id: 00_a" in body
     assert "disqualifiers (F-items still present): ['F06']" in body
     assert "(no near-duplicate groups in this batch)" in body
+
+
+def test_render_report_includes_pervasive_note_when_an_id_clears_the_threshold() -> None:
+    """DECISIONS.md D-008c: a pervasive ID is excluded from the habit but
+    still surfaced, as one disclosed report line distinct from the habit."""
+
+    def f05(frame):
+        return Finding(taxonomy_id="F05", description="bowing")
+
+    def f08(frame):
+        return None if frame.frame_id != "00_a" else Finding(taxonomy_id="F08", description="tilt")
+
+    lookup = _lookup({"F05": f05, "F08": f08})
+    frames = [_frame("00_a"), _frame("01_b"), _frame("02_c")]
+    output, runs_by_frame, _comparison_runs = analyze_batch.run_batch_analysis(
+        frames, detector_lookup=lookup, ids=["F05", "F08"]
+    )
+    body = analyze_batch.render_report([Path("a.jpg"), Path("b.jpg"), Path("c.jpg")], output, runs_by_frame)
+
+    assert f"habit: F08 — {taxonomy_correction_text('F08')}" in body
+    assert "This batch, throughout (excluded from habit selection): F05" in body
+
+
+def test_render_report_no_pervasive_note_when_nothing_clears_the_threshold() -> None:
+    lookup = _lookup({"F07": lambda frame: None})
+    frames = [_frame("00_a"), _frame("01_b")]
+    output, runs_by_frame, _comparison_runs = analyze_batch.run_batch_analysis(
+        frames, detector_lookup=lookup, ids=["F07"]
+    )
+    body = analyze_batch.render_report([Path("a.jpg"), Path("b.jpg")], output, runs_by_frame)
+
+    assert "throughout (excluded from habit selection)" not in body
 
 
 def test_render_report_includes_comparison_section() -> None:

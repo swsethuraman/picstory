@@ -43,6 +43,22 @@ TAXONOMY.md to implement, only this one mapping. So:
   unclassified excluded (see `compute_habit`'s own docstring for the
   reasoning, including its Correction-vs-Reinforcement coaching-text split
   and its documented tie-break).
+
+QUEUE.md item 17 (DECISIONS.md D-008b/D-008c) calibrates both mechanisms
+against the capstone batch (docs/capstone-vienna-report.md):
+
+- D-008c: raw-count habit selection is always captured by whichever
+  equipment/condition ID fires on nearly every frame (F05/F06/F11 on the
+  capstone batch), which is a fact about the lens or the light, not the
+  user. `compute_habit` now excludes any ID that is *pervasive* -
+  `pervasive_ids`/`PERVASIVE_THRESHOLD` - from habit selection; the habit
+  is the most-recurrent *non-pervasive* F/S ID. Pervasive IDs are not
+  discarded - `pervasive_note` surfaces them as one disclosed report line,
+  distinct from the habit.
+- D-008b: at equal `score_frame`, `rank_frames` now breaks the tie toward
+  the frame with more named S-item strengths before falling back to batch
+  order - "something right" outranks "merely nothing wrong" at equal net
+  score, rather than winning by the luck of position.
 """
 
 from __future__ import annotations
@@ -75,8 +91,20 @@ def score_frame(frame_analysis: FrameAnalysis) -> int:
 
 
 def rank_frames(frame_analyses: list[FrameAnalysis]) -> list[FrameAnalysis]:
-    """The shortlist: every frame, best-scoring first. Ties keep batch order."""
-    return sorted(frame_analyses, key=score_frame, reverse=True)
+    """The shortlist: every frame, best-scoring first.
+
+    DECISIONS.md D-008b: at equal `score_frame`, the frame with more named
+    S-item strengths ranks first - a frame with something *right* beats a
+    frame with merely nothing wrong, rather than the two being an
+    indistinguishable tie broken only by position. Only a genuine tie on
+    both score and S-count keeps the batch's original order (Python's
+    `sorted` is stable even under `reverse=True`).
+    """
+    return sorted(
+        frame_analyses,
+        key=lambda fa: (score_frame(fa), len(_ids_with_prefix(fa, "S"))),
+        reverse=True,
+    )
 
 
 def build_pick(frame_analyses: list[FrameAnalysis]) -> Pick | None:
@@ -100,18 +128,75 @@ def share_list_lines(pick: Pick) -> list[str]:
     return [f"{taxonomy_id} — {taxonomy_reinforcement_text(taxonomy_id)}" for taxonomy_id in pick.reasons]
 
 
+PERVASIVE_THRESHOLD = 2 / 3
+"""DECISIONS.md D-008c: an F/S item firing on more than this share of the
+batch's frames describes the batch's shooting conditions or equipment (the
+lens, the light), not a per-frame choice by the user, and is excluded from
+habit selection by `compute_habit`. Calibrated against the capstone batch
+(docs/capstone-vienna-report.md, 31 frames): F05 (28), F06 (27), and F11
+(25) all clear it (>20.67 frames) and are excluded; the ruling's own
+recommendation named this exact fraction (">2/3"), not a value tuned to hit
+a particular outcome.
+"""
+
+
+def _id_counts(frame_analyses: list[FrameAnalysis]) -> dict[str, int]:
+    """Per-ID frame counts across F/S items only (R01/unclassified excluded).
+
+    Shared by `compute_habit` and `pervasive_ids` so both read "how many
+    frames carry this ID" the same way - one count per distinct frame, not
+    a raw finding count (see `_ids_with_prefix`'s docstring: a frame
+    structurally carries at most one `Finding` per ID).
+    """
+    counts: dict[str, int] = {}
+    for frame_analysis in frame_analyses:
+        for taxonomy_id in _ids_with_prefix(frame_analysis, "F") + _ids_with_prefix(frame_analysis, "S"):
+            counts[taxonomy_id] = counts.get(taxonomy_id, 0) + 1
+    return counts
+
+
+def pervasive_ids(frame_analyses: list[FrameAnalysis]) -> list[str]:
+    """F/S items firing on more than `PERVASIVE_THRESHOLD` of the batch's frames.
+
+    Sorted by taxonomy ID (ascending) for deterministic reporting, same
+    convention as `_ids_with_prefix`. Empty for an empty batch - there is no
+    frame count to take a share of.
+    """
+    total = len(frame_analyses)
+    if total == 0:
+        return []
+    return sorted(tid for tid, count in _id_counts(frame_analyses).items() if count / total > PERVASIVE_THRESHOLD)
+
+
+def pervasive_note(frame_analyses: list[FrameAnalysis]) -> str | None:
+    """One-line, disclosed session note for this batch's pervasive F/S items, or `None`.
+
+    DECISIONS.md D-008c's ruling: pervasive findings are not discarded once
+    excluded from habit selection - they surface as "a separate one-line
+    session note ... distinct from the habit" (one line, not a list, per
+    the product spec). `None` when nothing clears the threshold, so callers
+    can skip the line entirely rather than print an empty one.
+    """
+    ids = pervasive_ids(frame_analyses)
+    if not ids:
+        return None
+    return f"This batch, throughout (excluded from habit selection): {', '.join(ids)}"
+
+
 def compute_habit(frame_analyses: list[FrameAnalysis]) -> Habit | None:
-    """The session habit: whichever F- or S-item recurs most across the batch.
+    """The session habit: the most-recurrent *non-pervasive* F- or S-item.
 
     TAXONOMY.md's output-mapping table: "Whichever F- or S-item recurs most
-    in the batch; reinforcement counts as coaching." Recurrence is counted
-    per distinct frame carrying the ID - a `FrameAnalysis` structurally has
-    at most one `Finding` per ID (see `_ids_with_prefix`'s docstring), so
-    this is "how many frames have this ID," not a raw finding count. R01
-    (never a per-frame `Finding` - see scripts/analyze.py's module
-    docstring) and `unclassified` (neither polarity, no coaching text in
-    TAXONOMY.md) are excluded, the same exclusion `score_frame` already
-    applies to.
+    in the batch; reinforcement counts as coaching." DECISIONS.md D-008c
+    narrows "recurs most" to exclude `pervasive_ids` first - raw count alone
+    is always captured by whichever ID describes the batch's equipment or
+    conditions (a fact about the lens, not the user), which the capstone
+    batch demonstrated directly (F05 at 28/31 topped every prior raw-count
+    run). Recurrence is still counted per distinct frame carrying the ID,
+    not a raw finding count (see `_id_counts`'s docstring). R01 (never a
+    per-frame `Finding` - see scripts/analyze.py's module docstring) and
+    `unclassified` (neither polarity, no coaching text in TAXONOMY.md) are
+    excluded, the same exclusion `score_frame` already applies to.
 
     "Reinforcement counts as coaching" reads as the symmetric statement for
     S-items that F-items already get from their own Correction bullet -
@@ -120,22 +205,22 @@ def compute_habit(frame_analyses: list[FrameAnalysis]) -> Habit | None:
     `schema.py` (same single-source-of-truth reasoning as `share_list_lines`
     uses for Reinforcement text).
 
-    Ties break by taxonomy ID (ascending). TAXONOMY.md does not specify a
-    tie-break for "recurs most" under a genuine tie; this makes the choice
-    deterministic and documented rather than leaving it to dict iteration
-    order, consistent with `_ids_with_prefix`'s own ID-order sorting
-    elsewhere in this module.
+    Ties break by taxonomy ID (ascending), unchanged from before this
+    exclusion - TAXONOMY.md does not specify a tie-break for "recurs most"
+    under a genuine tie; this makes the choice deterministic and documented
+    rather than leaving it to dict iteration order.
 
-    `None` for a batch with no F- or S-item finding anywhere - nothing
-    recurs, so there is nothing to name a habit.
+    `None` when every F/S item that fired is pervasive, or nothing fired at
+    all - either way nothing non-pervasive recurs, so there is nothing to
+    name a habit from (pervasive IDs still reach the report via
+    `pervasive_note`, just not as the habit).
     """
-    counts: dict[str, int] = {}
-    for frame_analysis in frame_analyses:
-        for taxonomy_id in _ids_with_prefix(frame_analysis, "F") + _ids_with_prefix(frame_analysis, "S"):
-            counts[taxonomy_id] = counts.get(taxonomy_id, 0) + 1
-    if not counts:
+    counts = _id_counts(frame_analyses)
+    excluded = set(pervasive_ids(frame_analyses))
+    eligible = {tid: count for tid, count in counts.items() if tid not in excluded}
+    if not eligible:
         return None
-    winner = max(sorted(counts), key=counts.get)
+    winner = max(sorted(eligible), key=eligible.get)
     description = (
         taxonomy_correction_text(winner) if winner.startswith("F") else taxonomy_reinforcement_text(winner)
     )

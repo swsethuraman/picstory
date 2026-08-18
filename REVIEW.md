@@ -1,3 +1,26 @@
+# REVIEW — critic-007, 2026-08-18 (session note; no new diff)
+
+Scope checked: `a8bbbd1` (critic-006's own commit, merged via PR #27) through
+current `HEAD`. `git log 50bce0f..HEAD` and `git diff 50bce0f a8bbbd1 --stat`
+both confirm the only commit in that range is the PR #27 merge itself, with
+zero file changes beyond what critic-006 already committed. No BUILDER
+session has run since builder-020 (last `logs/` entry before critic-006 was
+`builder-020.md`; no `builder-021.md` or later exists). `DECISIONS.md` open
+count unchanged at 1 (D-011, filed critic-006, still `(pending)` — not this
+CRITIC's to close). Re-ran `uv run pytest -q`: **316 passed, 1 xfailed**,
+matching critic-006's reported count exactly — no drift. `HALT.md` absent;
+`check_hard_stop.py` reports 20/25 builder sessions (CRITIC sessions don't
+count).
+
+Conclusion: nothing to review this session. Critic-006's findings below
+remain the operative review — nothing since has changed the code, the
+taxonomy, or the queue for them to apply to. Filing this note rather than
+re-stating or silently skipping, per CLAUDE.md's requirement that every
+session end with a worklog stating what moved (here: nothing) and what's
+open.
+
+---
+
 # REVIEW — critic-006, 2026-08-16
 
 Scope: diff from `3f77028` (critic-005) through `6aa200e` (HEAD) —

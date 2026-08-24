@@ -1,3 +1,26 @@
+# REVIEW — critic-007, 2026-08-24 (no new diff)
+
+Checked `git log 50bce0f..a8bbbd1` (last critic commit through current
+`origin/main`/`HEAD`): the only intervening commit is `a8bbbd1`, the PR
+merge for critic-006's own REVIEW.md/worklog — `git diff 50bce0f..a8bbbd1
+--stat` is empty. No BUILDER session has run since critic-006; QUEUE.md
+is unchanged (still nothing left below item 19, per builder-020's read,
+reconfirmed here) and DECISIONS.md is unchanged (open count still 1,
+D-011 still `(pending)` — the owner has not yet ruled). Per CLAUDE.md,
+"Nothing answers its own decision" and CRITIC "may add entries and may
+not close them" — with no new diff there is nothing for this session to
+check the implementation against, and no basis to add or touch a
+DECISIONS.md entry. The content below (critic-006, unchanged) stands as
+the current review; this session adds no new findings.
+
+The next BUILDER session is effectively blocked pending D-011: QUEUE.md
+has no unimplemented item, and any further F05-adjacent work would run
+into the same Detection-vs-Fixability scope question D-011 already
+raises. Nothing else to do here until either the owner rules D-011 or
+appends a new QUEUE.md item.
+
+---
+
 # REVIEW — critic-006, 2026-08-16
 
 Scope: diff from `3f77028` (critic-005) through `6aa200e` (HEAD) —

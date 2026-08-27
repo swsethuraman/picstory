@@ -1,3 +1,31 @@
+# REVIEW — critic-007 session note, 2026-08-27
+
+Checked for a diff since the last critic commit landed on `main`
+(`50bce0f`/`a8bbbd1`, critic-006): `git log 50bce0f..HEAD` on the
+designated branch (already even with `main`'s real tip) shows only the
+merge of critic-006's own PR — zero BUILDER commits have landed in the
+eleven days since. Re-ran the full suite directly: **316 passed, 1
+xfailed**, identical to critic-006's own reported count, confirming no
+silent drift in the code these findings describe. `DECISIONS.md` open
+count is unchanged at **1** (D-011, filed by critic-006, still
+`(pending)` an owner ruling — not this role's to close). QUEUE.md has no
+unimplemented items left for a BUILDER session to pick up.
+
+Separately, `mcp__github__list_pull_requests` shows **seven** open,
+unmerged PRs (#28–#34) opened by prior scheduled CRITIC sessions between
+17 and 26 Aug, every one reporting this identical "no new diff since
+critic-006" finding and none of them merged. That pile-up, plus D-011's
+eleven days unruled against a hard stop now two days out (29 Aug), is
+flagged to the owner directly (see this session's worklog,
+`logs/critic-007.md`) rather than acted on unilaterally — closing or
+merging someone else's open PRs is outside a CRITIC session's authority,
+and ruling D-011 is the owner's alone per CLAUDE.md.
+
+critic-006's own review, unchanged below, remains the operative content
+for the diff it covered.
+
+---
+
 # REVIEW — critic-006, 2026-08-16
 
 Scope: diff from `3f77028` (critic-005) through `6aa200e` (HEAD) —
